@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- 对话历史标题 -->
+    <group android:id="@+id/group_conversation_header">
+        <item
+            android:id="@+id/menu_conversation_header"
+            android:title="对话历史"
+            android:enabled="false" />
+    </group>
+
+    <!-- 对话历史项（动态生成） -->
+    <group android:id="@+id/group_conversations">
+        <!-- 对话历史将通过代码动态添加 -->
+    </group>
+
+    <group android:checkableBehavior="single">
+
+        <item
+            android:id="@+id/nav_new_chat"
+            android:icon="@drawable/ic_add"
+            android:title="@string/nav_new_chat"
+            app:showAsAction="ifRoom" />
+
+        <item
+            android:id="@+id/nav_settings"
+            android:title="@string/nav_settings"
+            android:icon="@drawable/ic_settings"
+            app:showAsAction="ifRoom" />
+
+        <item
+            android:id="@+id/nav_about"
+            android:title="@string/nav_about"
+            android:icon="@drawable/ic_info"
+            app:showAsAction="ifRoom" />
+    </group>
+
+</menu>

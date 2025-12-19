@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌色 -->
+    <color name="primary_gradient_start">#3b82f6</color>
+    <color name="primary_gradient_end">#6366f1</color>
+    <color name="primary">#3d6aff</color>
+
+    <!-- 消息背景色 -->
+    <color name="user_message_bg">#3d6aff</color>
+    <color name="ai_message_bg">#f0f7ff</color>
+
+    <!-- 文本颜色 -->
+    <color name="text_primary">#1f2937</color>
+    <color name="text_secondary">#6b7280</color>
+    <color name="text_tertiary">#9ca3af</color>
+
+    <!-- 边框颜色 -->
+    <color name="border_light">#e5e7eb</color>
+    <color name="border_medium">#d1d5db</color>
+
+    <!-- 功能色 -->
+    <color name="success">#10b981</color>
+    <color name="warning">#f59e0b</color>
+    <color name="error">#ef4444</color>
+    <color name="info">#3b82f6</color>
+
+    <!-- 背景色 -->
+    <color name="background_light">#f9fafb</color>
+    <color name="background_white">#ffffff</color>
+
+    <!-- 加载动画色 -->
+    <color name="loading_dot">#9ca3af</color>
+</resources>

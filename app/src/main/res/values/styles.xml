@@ -1,0 +1,51 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 基础主题 -->
+    <style name="Theme.Xiaoxia" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary_gradient_start</item>
+        <item name="colorPrimaryVariant">@color/primary_gradient_end</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+
+        <item name="colorSecondary">@color/text_secondary</item>
+        <item name="colorSecondaryVariant">@color/text_tertiary</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+
+        <item name="colorSurface">@color/background_white</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+
+        <item name="android:statusBarColor">@color/primary_gradient_start</item>
+        <item name="android:navigationBarColor">@color/background_white</item>
+
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Xiaoxia.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Xiaoxia.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Xiaoxia.Large</item>
+    </style>
+
+    <!-- 形状样式 -->
+    <style name="ShapeAppearance.Xiaoxia.Small" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Xiaoxia.Medium" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Xiaoxia.Large" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">16dp</item>
+    </style>
+
+    <!-- WebView主题 -->
+    <style name="Theme.Xiaoxia.WebView" parent="Theme.Material3.DayNight">
+        <item name="colorPrimary">@color/primary_gradient_start</item>
+        <item name="android:statusBarColor">@color/primary_gradient_start</item>
+    </style>
+
+</resources>

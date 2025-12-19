@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">夏</string>
+    <string name="new_chat">新对话</string>
+    <string name="deep_thinking">深度思考</string>
+    <string name="web_search">联网搜索</string>
+    <string name="chat_hint">与小夏聊聊天吧...</string>
+    <string name="voice_input">语音输入</string>
+    <string name="attach_file">上传附件</string>
+    <string name="send_message">发送消息</string>
+    <string name="app_subtitle">小夏 · 您的个人发展与规划伙伴</string>
+    <string name="nav_new_chat">新建对话</string>
+    <string name="nav_conversation_list">对话历史</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_about">关于小夏</string>
+    <string name="timestamp_just_now">刚刚</string>
+    <string name="view_deep_thought">查看深度思考</string>
+    <string name="model_thinking_process">模型思考过程</string>
+    <string name="tip">提示</string>
+    <string name="disclaimer_text">建议仅供参考，请结合自身情况做出最终决策。</string>
+    <string name="conversation_title">对话标题</string>
+    <string name="conversation_summary">对话摘要...</string>
+    <string name="more_actions">更多操作</string>
+</resources>
