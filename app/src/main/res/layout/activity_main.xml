@@ -61,17 +61,12 @@
                 android:layout_height="match_parent"
                 android:visibility="gone" />
 
-            <!-- 消息列表 -->
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/recyclerView_messages"
+            <!-- WebView 用于显示对话 -->
+            <WebView
+                android:id="@+id/webview_messages"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="16dp"
-                android:paddingBottom="16dp"
-                android:background="@android:color/white" />
+                android:visibility="gone" />
 
         </FrameLayout>
 

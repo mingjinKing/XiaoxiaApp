@@ -150,11 +150,8 @@ class ChatViewModel(
                 )
                 Log.d(TAG, "初始化平滑缓冲区")
 
-                // 设置输出回调并启动平滑输出
-                // 在 sendMessage 方法中修改平滑输出回调部分：
+                // 修改平滑输出回调部分：
                 smoothBuffer?.startSmoothOutput { output ->
-                   // Log.v(TAG, "平滑输出回调: 文本长度=${output.text.length}, 是否最终=${output.isFinal}")
-                    // 只在需要时更新UI，避免频繁触发滚动
                     if (output.text.isNotEmpty() || output.reasoning.isNotEmpty() || output.isFinal) {
                         _chatState.update { currentState ->
                             val currentMessages = currentState.messages.toMutableList()
@@ -163,7 +160,6 @@ class ChatViewModel(
                             val loadingMessageIndex = currentMessages.indexOfFirst { it is Message.LoadingMessage }
                             if (loadingMessageIndex != -1) {
                                 currentMessages.removeAt(loadingMessageIndex)
-                                Log.d(TAG, "移除加载消息")
                             }
 
                             // 查找或创建AI消息
@@ -174,40 +170,27 @@ class ChatViewModel(
                             if (existingAiMessageIndex != -1) {
                                 // 更新现有的AI消息
                                 val existingMessage = currentMessages[existingAiMessageIndex] as Message.AIMessage
-
-                                // 关键修改：只有在消息内容有变化时才更新
-                                if (output.text.isNotEmpty() || output.reasoning.isNotEmpty()) {
-                                    val updatedMessage = existingMessage.copy(
-                                        content = existingMessage.content + output.text,
-                                        reasoningContent = (existingMessage.reasoningContent ?: "") + output.reasoning,
-                                        showReasoning = currentState.deepThinkingEnabled &&
-                                                ((existingMessage.reasoningContent?.isNotEmpty() == true) ||
-                                                        output.reasoning.isNotEmpty()),
-                                        isReceiving = !output.isFinal,
-                                        isReceivingReasoning = currentState.deepThinkingEnabled &&
-                                                !output.isFinal &&
-                                                ((existingMessage.reasoningContent?.isNotEmpty() == true) ||
-                                                        output.reasoning.isNotEmpty()),
-                                        // 重要：只在第一次创建时设置免责声明，后续更新保持原状
-                                        showDisclaimer = existingMessage.showDisclaimer
-                                    )
-                                    currentMessages[existingAiMessageIndex] = updatedMessage
-                                    //Log.v(TAG, "更新AI消息，累积文本长度=${updatedMessage.content.length}")
-                                }
+                                currentMessages[existingAiMessageIndex] = existingMessage.copy(
+                                    content = existingMessage.content + output.text,
+                                    reasoningContent = (existingMessage.reasoningContent ?: "") + output.reasoning,
+                                    showReasoning = currentState.deepThinkingEnabled &&
+                                            ((existingMessage.reasoningContent?.isNotEmpty() == true) ||
+                                                    output.reasoning.isNotEmpty()),
+                                    isReceiving = !output.isFinal
+                                )
                             } else {
-                                // 创建新的AI消息（只有第一次）
+                                // 创建新的AI消息
                                 val aiMessage = Message.AIMessage(
                                     id = aiMessageId,
                                     content = output.text,
                                     reasoningContent = output.reasoning,
                                     showReasoning = currentState.deepThinkingEnabled,
                                     isReceivingReasoning = currentState.deepThinkingEnabled,
-                                    showDisclaimer = true, // 只在这里设置为true
+                                    showDisclaimer = true,
                                     timestamp = System.currentTimeMillis(),
                                     isReceiving = !output.isFinal
                                 )
                                 currentMessages.add(aiMessage)
-                                // Log.d(TAG, "创建新的AI消息，初始文本长度=${output.text.length}")
                             }
 
                             currentState.copy(messages = currentMessages)

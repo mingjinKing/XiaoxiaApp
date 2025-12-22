@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>对话列表</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #ffffff;
+            padding: 16px 12px;
+            color: #333;
+        }
+
+        .message-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 100%;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            position: relative;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: 15%;
+        }
+
+        .ai-message {
+            align-self: flex-start;
+            background-color: #f0f2f5;
+            color: #333;
+            margin-right: 15%;
+        }
+
+        .message-content {
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .message-timestamp {
+            font-size: 11px;
+            color: rgba(255,255,255,0.8);
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        .ai-timestamp {
+            color: #999;
+            text-align: left;
+        }
+
+        .loading-message {
+            align-self: flex-start;
+            background-color: #f0f2f5;
+            padding: 12px 16px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .loading-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #667eea;
+            animation: loading 1.4s infinite ease-in-out;
+        }
+
+        .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes loading {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 链接样式 */
+        a {
+            color: #667eea;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        /* 思考过程样式 */
+        .reasoning-container {
+            background-color: #f8f9fa;
+            border-left: 3px solid #667eea;
+            padding: 12px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+        }
+
+        .reasoning-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .reasoning-content {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        /* 免责声明样式 */
+        .disclaimer {
+            background-color: #fff8e6;
+            border-left: 3px solid #ffb347;
+            padding: 10px;
+            margin-top: 8px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+<div id="messageContainer" class="message-container">
+    <!-- 消息将通过 JavaScript 动态插入 -->
+</div>
+
+<script>
+    // 初始化变量
+    let messageCount = 0;
+    const container = document.getElementById('messageContainer');
+
+    // 定义消息类型常量
+    const MESSAGE_TYPE = {
+        USER: 'user',
+        AI: 'ai',
+        LOADING: 'loading'
+    };
+
+    // 向 WebView 添加消息
+    function addMessage(message) {
+        let messageElement;
+
+        switch(message.type) {
+            case MESSAGE_TYPE.USER:
+                messageElement = createUserMessage(message);
+                break;
+            case MESSAGE_TYPE.AI:
+                messageElement = createAIMessage(message);
+                break;
+            case MESSAGE_TYPE.LOADING:
+                messageElement = createLoadingMessage();
+                break;
+        }
+
+        if (messageElement) {
+            container.appendChild(messageElement);
+            scrollToBottom();
+        }
+    }
+
+    // 创建用户消息元素
+    function createUserMessage(message) {
+        const div = document.createElement('div');
+        div.className = 'message user-message';
+        div.id = `msg-${message.id || Date.now()}`;
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.innerHTML = escapeHtml(message.content).replace(/\n/g, '<br>');
+
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-timestamp';
+        timestamp.textContent = formatTime(message.timestamp);
+
+        div.appendChild(content);
+        div.appendChild(timestamp);
+
+        return div;
+    }
+
+    // 创建 AI 消息元素
+    function createAIMessage(message) {
+        const div = document.createElement('div');
+        div.className = 'message ai-message';
+        div.id = `msg-${message.id || Date.now()}`;
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+
+        // 处理内容中的链接
+        let processedContent = escapeHtml(message.content);
+        processedContent = processedContent.replace(/\n/g, '<br>');
+        processedContent = linkify(processedContent);
+        content.innerHTML = processedContent;
+
+        div.appendChild(content);
+
+        // 添加思考过程（如果存在）
+        if (message.reasoningContent && message.showReasoning) {
+            const reasoningDiv = document.createElement('div');
+            reasoningDiv.className = 'reasoning-container';
+
+            const reasoningTitle = document.createElement('div');
+            reasoningTitle.className = 'reasoning-title';
+            reasoningTitle.textContent = '深度思考过程';
+
+            const reasoningContent = document.createElement('div');
+            reasoningContent.className = 'reasoning-content';
+            reasoningContent.innerHTML = linkify(escapeHtml(message.reasoningContent).replace(/\n/g, '<br>'));
+
+            reasoningDiv.appendChild(reasoningTitle);
+            reasoningDiv.appendChild(reasoningContent);
+            div.appendChild(reasoningDiv);
+        }
+
+        // 添加免责声明（如果需要）
+        if (message.showDisclaimer) {
+            const disclaimer = document.createElement('div');
+            disclaimer.className = 'disclaimer';
+            disclaimer.textContent = '建议仅供参考，请结合自身情况做出最终决策。';
+            div.appendChild(disclaimer);
+        }
+
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-timestamp ai-timestamp';
+        timestamp.textContent = formatTime(message.timestamp);
+        div.appendChild(timestamp);
+
+        return div;
+    }
+
+    // 创建加载消息
+    function createLoadingMessage() {
+        const div = document.createElement('div');
+        div.className = 'loading-message';
+
+        const dots = document.createElement('div');
+        dots.className = 'loading-dots';
+
+        for (let i = 0; i < 3; i++) {
+            const dot = document.createElement('span');
+            dot.className = 'loading-dot';
+            dots.appendChild(dot);
+        }
+
+        const text = document.createElement('span');
+        text.textContent = '思考中...';
+        text.style.color = '#666';
+
+        div.appendChild(dots);
+        div.appendChild(text);
+
+        return div;
+    }
+
+    // 更新现有的 AI 消息（用于流式输出）
+    function updateAIMessage(messageId, content, reasoningContent) {
+        const existingMessage = document.getElementById(`msg-${messageId}`);
+        if (existingMessage) {
+            const contentElement = existingMessage.querySelector('.message-content');
+            if (contentElement) {
+                contentElement.innerHTML = linkify(escapeHtml(content).replace(/\n/g, '<br>'));
+            }
+
+            // 更新思考过程
+            if (reasoningContent) {
+                let reasoningContainer = existingMessage.querySelector('.reasoning-container');
+                if (!reasoningContainer) {
+                    reasoningContainer = document.createElement('div');
+                    reasoningContainer.className = 'reasoning-container';
+
+                    const reasoningTitle = document.createElement('div');
+                    reasoningTitle.className = 'reasoning-title';
+                    reasoningTitle.textContent = '深度思考过程';
+
+                    const reasoningContentElement = document.createElement('div');
+                    reasoningContentElement.className = 'reasoning-content';
+
+                    reasoningContainer.appendChild(reasoningTitle);
+                    reasoningContainer.appendChild(reasoningContentElement);
+
+                    // 插入到内容之后
+                    contentElement.parentNode.insertBefore(reasoningContainer, contentElement.nextSibling);
+                }
+
+                const reasoningContentElement = reasoningContainer.querySelector('.reasoning-content');
+                if (reasoningContentElement) {
+                    reasoningContentElement.innerHTML = linkify(escapeHtml(reasoningContent).replace(/\n/g, '<br>'));
+                }
+            }
+
+            scrollToBottom();
+        }
+    }
+
+    // 移除加载消息
+    function removeLoadingMessage() {
+        const loadingMessages = container.querySelectorAll('.loading-message');
+        loadingMessages.forEach(msg => msg.remove());
+    }
+
+    // 清空所有消息
+    function clearAllMessages() {
+        container.innerHTML = '';
+        messageCount = 0;
+    }
+
+    // 滚动到底部
+    function scrollToBottom() {
+        window.scrollTo({
+            top: document.body.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    // 格式化时间戳
+    function formatTime(timestamp) {
+        if (!timestamp) return '刚刚';
+
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return '刚刚';
+        if (diffMins < 60) return `${diffMins}分钟前`;
+
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours}小时前`;
+
+        // 超过一天显示日期
+        return date.toLocaleDateString('zh-CN', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    // HTML 转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 将文本中的 URL 转换为链接
+    function linkify(text) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return text.replace(urlRegex, function(url) {
+            return `<a href="${url}" onclick="window.AndroidInterface.openLink('${url}')">${url}</a>`;
+        });
+    }
+
+    // 初始化 - 当页面加载完成后
+    window.addEventListener('DOMContentLoaded', function() {
+        scrollToBottom();
+    });
+</script>
+</body>
+</html>

@@ -13,6 +13,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -47,6 +50,7 @@ import com.derbi.xiaoxia.utils.DateTypeAdapter
 import com.derbi.xiaoxia.viewmodel.ChatViewModel
 import com.derbi.xiaoxia.viewmodel.ChatViewModelFactory
 import com.google.android.material.navigation.NavigationView
+import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.TypeAdapter
 import com.google.gson.stream.JsonReader
@@ -67,7 +71,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var navigationView: NavigationView
-    private lateinit var messageRecyclerView: RecyclerView
+    private lateinit var webView: WebView
     private lateinit var inputEditText: EditText
     private lateinit var fabSend: ImageButton
     private lateinit var switchDeepThinking: SwitchCompat
@@ -119,7 +123,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         initViews()
         setupMoreButton() // 新增：设置更多按钮
         setupWelcomeGrid()
-        setupRecyclerView()
+        setupWebView()
         setupClickListeners()
         setupInputListener()
         setupBackPressedHandler()
@@ -178,19 +182,70 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun updateMessages(messages: List<Message>) {
-        messageAdapter.submitList(messages.toList())
+        updateWebViewMessages(messages)
+    }
+
+    // 新的 WebView 消息更新方法
+    private fun updateWebViewMessages(messages: List<Message>) {
+        if (!::webView.isInitialized || messages.isEmpty()) return
+
+        // 将消息转换为 JSON 格式
+        val messagesJson = messages.map { message ->
+            when (message) {
+                is Message.UserMessage -> mapOf(
+                    "type" to "user",
+                    "id" to message.id,
+                    "content" to message.content,
+                    "timestamp" to message.timestamp
+                )
+                is Message.AIMessage -> mapOf(
+                    "type" to "ai",
+                    "id" to message.id,
+                    "content" to message.content,
+                    "reasoningContent" to message.reasoningContent,
+                    "showReasoning" to message.showReasoning,
+                    "showDisclaimer" to message.showDisclaimer,
+                    "timestamp" to message.timestamp
+                )
+                is Message.LoadingMessage -> mapOf(
+                    "type" to "loading"
+                )
+                else -> null
+            }
+        }.filterNotNull()
+
+        // 转换为 JSON 字符串
+        val jsonString = Gson().toJson(messagesJson)
+
+        runOnUiThread {
+            webView.evaluateJavascript("""
+            (function() {
+                // 先清空所有消息
+                clearAllMessages();
+                
+                // 添加新消息
+                var messages = $jsonString;
+                messages.forEach(function(msg) {
+                    addMessage(msg);
+                });
+            })();
+        """.trimIndent(), null)
+        }
     }
 
     private fun initViews() {
         drawerLayout = findViewById(R.id.drawer_layout)
         navigationView = findViewById(R.id.navigation_view)
-        messageRecyclerView = findViewById(R.id.recyclerView_messages)
         inputEditText = findViewById(R.id.input_message)
         fabSend = findViewById(R.id.fab_send)
         switchDeepThinking = findViewById(R.id.switch_deep_thinking)
         switchWebSearch = findViewById(R.id.switch_web_search)
         toolbarTitle = findViewById(R.id.toolbar_title)
-        profileImageView = findViewById(R.id.profile_image)  // 初始化头像 ImageView
+        profileImageView = findViewById(R.id.profile_image)
+
+        // 初始化 WebView
+        webView = findViewById(R.id.webview_messages)
+        setupWebView()
 
         // 获取 HeaderView (通常是第 0 个)
         val headerView = navigationView.getHeaderView(0)
@@ -210,6 +265,57 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
         welcomeContainer = findViewById(R.id.welcome_container)
+    }
+
+    // 设置 WebView
+    private fun setupWebView() {
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = true
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            setSupportMultipleWindows(true)
+        }
+
+        // 添加 JavaScript 接口
+        webView.addJavascriptInterface(WebAppInterface(), "AndroidInterface")
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                url?.let {
+                    if (it.startsWith("http://") || it.startsWith("https://")) {
+                        openLinkInWebView(it, "链接")
+                        return true
+                    }
+                }
+                return false
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                // 页面加载完成后，初始化消息（如果有）
+                if (viewModel.chatState.value.messages.isNotEmpty()) {
+                    updateWebViewMessages(viewModel.chatState.value.messages)
+                }
+            }
+        }
+
+        // 加载本地 HTML 文件
+        webView.loadUrl("file:///android_asset/chat.html")
+    }
+
+    // JavaScript 接口类
+    inner class WebAppInterface {
+        @JavascriptInterface
+        fun openLink(url: String) {
+            runOnUiThread {
+                openLinkInWebView(url, "链接")
+            }
+        }
     }
 
     /**
@@ -284,256 +390,17 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         recyclerViewExamples.adapter = adapter
     }
 
+    // 修改 checkChatState 方法
     private fun checkChatState(showWelcome: Boolean, isEmpty: Boolean) {
         if (showWelcome || isEmpty) {
             welcomeContainer.visibility = View.VISIBLE
-            messageRecyclerView.visibility = View.GONE
+            webView.visibility = View.GONE
         } else {
             welcomeContainer.visibility = View.GONE
-            messageRecyclerView.visibility = View.VISIBLE
+            webView.visibility = View.VISIBLE
         }
     }
 
-    private fun setupRecyclerView() {
-        val linearLayoutManager = LinearLayoutManager(this)
-        linearLayoutManager.stackFromEnd = true
-        messageRecyclerView.layoutManager = linearLayoutManager
-
-        messageAdapter = MessageAdapter { url ->
-            openLinkInWebView(url, "链接")
-        }
-        messageRecyclerView.adapter = messageAdapter
-
-        // 禁用 RecyclerView 的更新动画，防止 AI 消息流式输出时产生闪烁效果
-        (messageRecyclerView.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-
-        // 修改后的滚动监听器
-        messageRecyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            private var isDragging = false
-            private var lastScrollY = 0
-
-            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                super.onScrollStateChanged(recyclerView, newState)
-
-                when (newState) {
-                    RecyclerView.SCROLL_STATE_DRAGGING -> {
-                        if(!isAtMessageBottom()){
-                            // 用户开始拖拽
-                            isUserScrolling = true
-                            isDragging = true
-                            recyclerView.post {
-                                linearLayoutManager.stackFromEnd = false
-                            }
-                            Log.d("MainActivity", "用户开始拖拽未到底部，锁定滚动")
-                        }else{
-                            // 用户开始拖拽
-                            isUserScrolling = false
-                            isDragging = true
-                            recyclerView.post {
-                                linearLayoutManager.stackFromEnd = true
-                            }
-                            Log.d("MainActivity", "用户开始拖拽到底部，解开滚动锁定")
-                        }
-
-                    }
-                    RecyclerView.SCROLL_STATE_SETTLING -> {
-                        // 惯性滚动中
-                        isDragging = false
-                        Log.d("MainActivity", "惯性滚动中")
-                    }
-                    RecyclerView.SCROLL_STATE_IDLE -> {
-                        isDragging = false
-                        // 检查是否滚动到底部附近
-                        if (isAtMessageBottom()) {
-                            // 如果用户在底部附近，解除滚动锁定，允许自动滚动
-                            isUserScrolling = false
-                            recyclerView.post {
-                                linearLayoutManager.stackFromEnd = true
-                            }
-                            Log.d("MainActivity", "滚动到底部，解锁自动滚动")
-                        }
-                        // 如果停在中间位置，保持锁定状态
-                    }
-                }
-            }
-
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                super.onScrolled(recyclerView, dx, dy)
-
-                // 记录滚动方向
-                lastScrollY = dy
-
-                // 如果用户手动向下滚动（查看更早的消息），保持锁定
-                if (dy < 0 && isDragging) {
-                    isUserScrolling = true
-                    recyclerView.post {
-                        linearLayoutManager.stackFromEnd = false
-                    }
-                    Log.d("MainActivity", "用户向上滚动查看历史，保持锁定")
-                }
-
-                // 如果用户手动滚动到底部，解锁
-                if (isDragging && isAtMessageBottom()) {
-                    isUserScrolling = false
-                    recyclerView.post {
-                        linearLayoutManager.stackFromEnd = true
-                    }
-                    Log.d("MainActivity", "用户手动滚动到底部，解锁")
-                }
-            }
-        })
-
-        // 修改适配器数据观察器
-        messageAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
-            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
-                super.onItemRangeChanged(positionStart, itemCount)
-
-                // 只有在以下情况下才自动滚动：
-                // 1. 用户没有手动滚动
-                // 2. 或者用户在底部附近（愿意查看最新内容）
-                if (!shouldAutoScroll()) {
-                    isUserScrolling = true
-                    messageRecyclerView.post {
-                        linearLayoutManager.stackFromEnd = false
-                    }
-                    //Log.d("MainActivity", "用户正在查看历史，跳过自动滚动")
-                    return
-                }
-
-                val isLastMessage = positionStart + itemCount >= messageAdapter.itemCount
-                /*if (isLastMessage) {
-                    Log.d("MainActivity", "最后一条消息更新，自动滚动")
-                    messageRecyclerView.post {
-                        messageRecyclerView.scrollToPosition(messageAdapter.itemCount - 1)
-                    }
-                }*/
-            }
-
-            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
-                super.onItemRangeInserted(positionStart, itemCount)
-
-                // 新消息插入时，检查是否应该滚动
-                if (shouldAutoScroll()) {
-                    Log.d("MainActivity", "新消息插入，自动滚动")
-                    isUserScrolling = false
-                    messageRecyclerView.post {
-                        linearLayoutManager.stackFromEnd = true
-                        messageRecyclerView.scrollToPosition(messageAdapter.itemCount - 1)
-                    }
-                }
-            }
-        })
-
-        // 监听 AI 消息的流式输出状态
-        lifecycleScope.launch {
-            viewModel.chatState.collect { state ->
-                if (state.messages.isNotEmpty()) {
-                    val lastMessage = state.messages.last()
-                    if (lastMessage is Message.AIMessage && lastMessage.isReceiving) {
-                        // 只有在应该自动滚动时才滚动
-                        if (shouldAutoScroll()) {
-                            messageRecyclerView.post {
-                                isUserScrolling = false
-                                linearLayoutManager.stackFromEnd = true
-                                scrollToBottomIfNeeded()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 修改 shouldAutoScroll 方法，添加更智能的判断
-    private fun shouldAutoScroll(): Boolean {
-        // 如果用户明确锁定了滚动，不自动滚动
-        if (isUserScrolling) {
-            // 检查用户是否在底部附近
-            if (isAtMessageBottom()) {
-                // 用户在底部附近，表示他们愿意查看最新内容
-                return true
-            }
-            // 用户在查看历史，不自动滚动
-            return false
-        }
-
-        // 用户没有锁定，自动滚动
-        return true
-    }
-
-    /**
-     * 检查用户是否在查看当前可见的长消息的底部
-     * 适用于：长消息场景，用户可能在查看某条消息的中间或末尾
-     */
-    private fun isAtMessageBottom(): Boolean {
-        val layoutManager = messageRecyclerView.layoutManager as? LinearLayoutManager ?: return true
-
-        val firstVisiblePosition = layoutManager.findFirstVisibleItemPosition()
-        val lastVisiblePosition = layoutManager.findLastVisibleItemPosition()
-
-        // 如果可见范围内只有一条消息（长消息）
-        if (firstVisiblePosition == lastVisiblePosition) {
-            val visibleItem = layoutManager.findViewByPosition(firstVisiblePosition)
-            if (visibleItem != null) {
-                // 检查这条消息是否滚动到了底部
-                Log.d("MainActivity", "检查这条消息是否滚动到了底部, bottomOffset=${visibleItem.bottom}, height=${messageRecyclerView.height}")
-                val bottomOffset = messageRecyclerView.height - visibleItem.bottom
-                // 允许20像素的误差范围
-                return bottomOffset in -40..40
-            }
-        }
-
-        // 如果可见范围内有多条消息，使用原来的逻辑
-        return false;
-    }
-
-   /* // 简化滚动到底部的方法
-    private fun scrollToBottomIfNeeded() {
-        if (shouldAutoScroll()) {
-            val layoutManager = messageRecyclerView.layoutManager as? LinearLayoutManager
-            val totalItemCount = messageAdapter.itemCount
-
-            if (totalItemCount > 0 && layoutManager != null) {
-                // 直接滚动到最后，不使用动画避免闪烁
-                layoutManager.scrollToPositionWithOffset(totalItemCount - 1, 0)
-            }
-        }
-    }*/
-
-    // 智能滚动到底部
-    private fun scrollToBottomIfNeeded() {
-        Log.d("MainActivity", "scrollToBottomIfNeeded, isUserScrolling=$isUserScrolling")
-        if (isUserScrolling) return // 用户正在手动操作，系统绝不干预
-
-        val totalItemCount = messageAdapter.itemCount
-        if (totalItemCount > 0) {
-            val lastMessage = viewModel.chatState.value.messages.lastOrNull()
-            val isStreaming = lastMessage is Message.AIMessage && lastMessage.isReceiving
-
-            if (isStreaming) {
-                // 流式输出中，直接定位，不使用 smoothScroll 避免动画冲突
-                messageRecyclerView.scrollToPosition(totalItemCount - 1)
-            } else {
-                scrollToBottomSmooth()
-            }
-        }
-    }
-
-    // 平滑滚动到底部
-    private fun scrollToBottomSmooth() {
-        val totalItemCount = messageAdapter.itemCount
-        if (totalItemCount > 0) {
-            messageRecyclerView.post {
-                try {
-                    if (!isAtMessageBottom()) {
-                        messageRecyclerView.smoothScrollToPosition(totalItemCount - 1)
-                    }
-                } catch (e: Exception) {
-                    messageRecyclerView.scrollToPosition(totalItemCount - 1)
-                }
-            }
-        }
-    }
 
 
     private fun setupBackPressedHandler() {
@@ -621,7 +488,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         if (welcomeContainer.visibility == View.VISIBLE) {
             welcomeContainer.visibility = View.GONE
-            messageRecyclerView.visibility = View.VISIBLE
         }
 
         inputEditText.text.clear()
@@ -641,23 +507,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun forceScrollToBottom() {
-        val adapter = messageRecyclerView.adapter ?: return
-        val itemCount = adapter.itemCount
-        if (itemCount > 0) {
-            messageRecyclerView.post {
-                val layoutManager = messageRecyclerView.layoutManager as? LinearLayoutManager
-                if (layoutManager != null) {
-                    // 1. 先快速定位到最后一条
-                    layoutManager.scrollToPositionWithOffset(itemCount - 1, 0)
-
-                    // 2. 关键：在极短时间后再次校验，确保高度更新后依然在底部
-                    messageRecyclerView.postDelayed({
-                        // 使用 smoothScroll 触发二次修正，并强制滚动到准确的最后一个 item
-                        messageRecyclerView.smoothScrollToPosition(itemCount - 1)
-                    }, 100)
-                }
-            }
-        }
+        webView.evaluateJavascript("scrollToBottom();", null)
     }
 
     private fun clearMessages() {
@@ -746,14 +596,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 v: View?, left: Int, top: Int, right: Int, bottom: Int,
                 oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
             ) {
-                // 只要布局发生变化（比如内容填充满了），就执行强制滚动
+              /*  // 只要布局发生变化（比如内容填充满了），就执行强制滚动
                 messageRecyclerView.removeOnLayoutChangeListener(this)
                 messageRecyclerView.post {
                     forceScrollToBottom()
-                }
+                }*/
             }
         }
-        messageRecyclerView.addOnLayoutChangeListener(layoutListener)
+        //messageRecyclerView.addOnLayoutChangeListener(layoutListener)
     }
 
     // 对话历史适配器
