@@ -1,0 +1,267 @@
+/* layout.css */
+/* PC端全屏布局 */
+#app {
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+        "sidebar header"
+        "sidebar messages"
+        "sidebar input";
+    background: white;
+}
+
+.header {
+    grid-area: header;
+    background: linear-gradient(to right, #3b82f6, #6366f1);
+    color: white;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar {
+    grid-area: sidebar;
+    background: white;
+    border-right: 1px solid #e2e8f0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.message-container {
+    grid-area: messages;
+    overflow-y: auto;
+    padding: 1.5rem;
+    background-color: white;
+}
+
+.input-area {
+    grid-area: input;
+    background: white;
+}
+
+/* 移动端顶部栏 */
+.mobile-header {
+    display: none;
+    grid-area: mobile-header;
+    background: linear-gradient(to right, #3b82f6, #6366f1);
+    color: white;
+    padding: 0.75rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.mobile-header-left,
+.mobile-header-right {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.mobile-header-title {
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    flex: 1;
+    margin: 0 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-menu-btn {
+    background: transparent;
+    border: none;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.mobile-menu-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 移动端侧边栏遮罩 */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1003;
+}
+
+/* 消息区域全屏优化 */
+.messages-inner {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* 移动端布局 */
+@media (max-width: 767px) {
+    #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        grid-template-areas:
+            "mobile-header"
+            "messages"
+            "input";
+        position: relative;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -100%;
+        width: 85%;
+        max-width: 300px;
+        height: 100%;
+        z-index: 1004;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .sidebar.active {
+        left: 0;
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+    }
+
+    .mobile-header {
+        display: flex;
+    }
+
+    .header {
+        display: none;
+    }
+
+    .message-container {
+        padding: 1rem;
+        max-height: calc(100vh - 120px);
+    }
+
+    .user-message, .ai-message {
+        max-width: 90%;
+    }
+}
+
+/* 额外的移动端布局优化 */
+@media (max-width: 767px) {
+    /* 确保移动端顶部栏固定定位 */
+    .mobile-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 56px;
+        z-index: 1000;
+    }
+
+    .message-container {
+        margin-top: 56px;
+        max-height: calc(100vh - 56px - 10px); /* 视口高度 - 顶部栏 - 输入区域 */
+        height: calc(100vh - 56px - 180px);
+        overflow-y: auto;
+        padding: 0; /* 移除内边距，让欢迎页全宽显示 */
+    }
+
+    .messages-inner {
+        height: 100%;
+    }
+
+    /* 输入区域固定在底部 */
+    .input-area {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background: white;
+    }
+}
+
+/* 平板设备适配 */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .sidebar {
+        width: 280px;
+    }
+
+    .message-container {
+        padding: 1.25rem;
+    }
+
+    .user-message, .ai-message {
+        max-width: 80%;
+    }
+}
+
+/* 大屏幕优化 */
+@media (min-width: 1200px) {
+    .sidebar {
+        width: 320px;
+    }
+
+    .message-container {
+        padding: 2rem;
+    }
+}
+
+/* 确保侧边栏滚动条样式一致 */
+.sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.5);
+    border-radius: 3px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.8);
+}
+
+/* 消息容器滚动条优化 */
+.message-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.message-container::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.message-container::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.6);
+    border-radius: 4px;
+}
+
+.message-container::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.8);
+}

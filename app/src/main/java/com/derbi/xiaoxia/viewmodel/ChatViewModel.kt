@@ -168,22 +168,22 @@ class ChatViewModel(
                             }
 
                             if (existingAiMessageIndex != -1) {
-                                // 更新现有的AI消息
+                                // 更新现有的AI消息 - 改为替换而不是追加
                                 val existingMessage = currentMessages[existingAiMessageIndex] as Message.AIMessage
                                 currentMessages[existingAiMessageIndex] = existingMessage.copy(
-                                    content = existingMessage.content + output.text,
-                                    reasoningContent = (existingMessage.reasoningContent ?: "") + output.reasoning,
+                                    // 注意：这里直接替换而不是追加
+                                    content = output.text,  // 替换整个内容
+                                    reasoningContent = output.reasoning,  // 替换整个思考内容
                                     showReasoning = currentState.deepThinkingEnabled &&
-                                            ((existingMessage.reasoningContent?.isNotEmpty() == true) ||
-                                                    output.reasoning.isNotEmpty()),
+                                            output.reasoning.isNotEmpty(),
                                     isReceiving = !output.isFinal
                                 )
                             } else {
                                 // 创建新的AI消息
                                 val aiMessage = Message.AIMessage(
                                     id = aiMessageId,
-                                    content = output.text,
-                                    reasoningContent = output.reasoning,
+                                    content = output.text,  // 直接设置内容
+                                    reasoningContent = output.reasoning,  // 直接设置思考内容
                                     showReasoning = currentState.deepThinkingEnabled,
                                     isReceivingReasoning = currentState.deepThinkingEnabled,
                                     showDisclaimer = true,
@@ -213,16 +213,13 @@ class ChatViewModel(
                         responseCount++
                         totalTextLength += response.content.length
 
-                       // Log.v(TAG, "收到响应[$responseCount]: 文本=${response.content.length}字符")
-
-                        // 将响应添加到平滑缓冲区
-                        smoothBuffer?.appendContent(
+                        // 将响应设置到平滑缓冲区 - 替换整个内容
+                        smoothBuffer?.setLatestContent(
                             text = response.content,
                             reasoning = response.reasoningContent ?: ""
                         )
                     }
 
-                    //Log.d(TAG, "流式响应收集完成: 总共${responseCount}个响应, 文本${totalTextLength}字符")
                     isStreamCompleted = true
 
                     // 流式响应完成，标记缓冲区完成

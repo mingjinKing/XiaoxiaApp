@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>对话列表 - 小夏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: white;
+            border-bottom: 1px solid #eee;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f0f2f5;
+            color: #333;
+        }
+
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f0f2f5;
+            border: none;
+            cursor: pointer;
+        }
+
+        .conversation-list {
+            padding: 8px;
+        }
+
+        .conversation-item {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .conversation-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .conversation-item.selected {
+            border-left: 4px solid #667eea;
+            background: #f8f9ff;
+        }
+
+        .conversation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .conversation-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: #333;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .conversation-time {
+            font-size: 12px;
+            color: #999;
+            margin-left: 8px;
+        }
+
+        .conversation-summary {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .conversation-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .conversation-count {
+            background: #f0f2f5;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .conversation-status {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+
+        .conversation-status.active {
+            background: #e7f7e9;
+            color: #27ae60;
+        }
+
+        .conversation-status.expired {
+            background: #fee;
+            color: #e74c3c;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f0f2f5;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        .error-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #e74c3c;
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+
+        .fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+        }
+
+        .context-menu {
+            position: absolute;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            min-width: 160px;
+            z-index: 1000;
+            overflow: hidden;
+        }
+
+        .context-menu-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .context-menu-item:hover {
+            background: #f5f5f5;
+        }
+
+        .context-menu-item.delete {
+            color: #e74c3c;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 90%;
+            width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>我的对话</h1>
+    <div class="subtitle" id="sessionInfo">正在加载...</div>
+</div>
+
+<div class="actions">
+    <button class="btn btn-secondary" onclick="refreshConversations()">
+        刷新
+    </button>
+    <button class="btn btn-primary" onclick="createNewChat()">
+        新对话
+    </button>
+</div>
+
+<div class="conversation-list" id="conversationList">
+    <!-- 对话列表将通过JS动态插入 -->
+</div>
+
+<button class="fab" onclick="createNewChat()">
+    <span>+</span>
+</button>
+
+<!-- 加载状态 -->
+<div id="loadingState" class="loading" style="display: none;">
+    <div class="spinner"></div>
+    <div>加载中...</div>
+</div>
+
+<!-- 空状态 -->
+<div id="emptyState" class="empty-state" style="display: none;">
+    <div class="empty-icon">💬</div>
+    <h3>暂无对话</h3>
+    <p>开始一个新的对话吧！</p>
+</div>
+
+<!-- 错误状态 -->
+<div id="errorState" class="error-state" style="display: none;">
+    <div>加载失败，请重试</div>
+    <button class="btn btn-secondary" onclick="refreshConversations()" style="margin-top: 12px;">
+        重试
+    </button>
+</div>
+
+<!-- 上下文菜单 -->
+<div id="contextMenu" class="context-menu" style="display: none;"></div>
+
+<!-- 确认删除对话框 -->
+<div id="deleteModal" class="modal-overlay" style="display: none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">删除对话</h3>
+            <p>确定要删除这个对话吗？此操作不可撤销。</p>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">
+                取消
+            </button>
+            <button class="btn btn-primary" onclick="confirmDelete()" style="background: #e74c3c;">
+                删除
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 全局状态
+    let conversations = [];
+    let selectedConversationId = null;
+    let currentPage = 0;
+    let pageSize = 20;
+    let hasMore = true;
+    let isLoading = false;
+    let deleteTargetId = null;
+
+    // 配置
+    const API_BASE_URL = window.APP_CONFIG?.baseUrl || "https://derbi.net.cn";
+    const SESSION_ID = window.APP_CONFIG?.sessionId || "";
+
+    // DOM元素
+    const conversationList = document.getElementById('conversationList');
+    const loadingState = document.getElementById('loadingState');
+    const emptyState = document.getElementById('emptyState');
+    const errorState = document.getElementById('errorState');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const contextMenu = document.getElementById('contextMenu');
+    const deleteModal = document.getElementById('deleteModal');
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        initSession();
+        loadConversations();
+        setupEventListeners();
+    });
+
+    // 初始化会话
+    async function initSession() {
+        try {
+            // 从Android获取sessionId
+            const sessionId = window.Android?.getSessionId() || SESSION_ID;
+            if (!sessionId) {
+                // 如果没有sessionId，初始化新的
+                const response = await fetch(`${API_BASE_URL}/api/session/init`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userId: "user_" + Date.now()
+                    })
+                });
+
+                const data = await response.json();
+                const newSessionId = data.sessionId || response.headers.get('X-Session-Id');
+
+                if (newSessionId) {
+                    window.Android?.saveSessionId(newSessionId);
+                    updateSessionInfo(newSessionId);
+                }
+            } else {
+                updateSessionInfo(sessionId);
+            }
+        } catch (error) {
+            console.error('初始化会话失败:', error);
+            sessionInfo.textContent = '会话初始化失败';
+        }
+    }
+
+    // 更新会话信息显示
+    function updateSessionInfo(sessionId) {
+        const shortId = sessionId.substring(0, 8) + '...';
+        sessionInfo.textContent = `会话ID: ${shortId}`;
+    }
+
+    // 加载对话列表
+    async function loadConversations() {
+        if (isLoading || !hasMore) return;
+
+        showLoading();
+        isLoading = true;
+
+        try {
+            const sessionId = window.Android?.getSessionId() || SESSION_ID;
+            const response = await fetch(
+                `${API_BASE_URL}/api/sessions?page=${currentPage}&pageSize=${pageSize}`,
+                {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.sessions && data.sessions.length > 0) {
+                conversations = [...conversations, ...data.sessions];
+                renderConversations();
+
+                // 检查是否还有更多
+                hasMore = data.sessions.length >= pageSize;
+                if (hasMore) {
+                    currentPage++;
+                }
+            } else {
+                if (conversations.length === 0) {
+                    showEmptyState();
+                }
+                hasMore = false;
+            }
+
+            hideLoading();
+        } catch (error) {
+            console.error('加载对话列表失败:', error);
+            showErrorState();
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    // 渲染对话列表
+    function renderConversations() {
+        if (conversations.length === 0) {
+            showEmptyState();
+            return;
+        }
+
+        hideAllStates();
+
+        conversationList.innerHTML = conversations.map(conversation => `
+            <div class="conversation-item ${selectedConversationId === conversation.id ? 'selected' : ''}"
+                 data-id="${conversation.id}"
+                 onclick="openConversation('${conversation.id}')"
+                 oncontextmenu="showContextMenu(event, '${conversation.id}'); return false;">
+
+                <div class="conversation-header">
+                    <div class="conversation-title" title="${escapeHtml(conversation.title)}">
+                        ${escapeHtml(conversation.title)}
+                    </div>
+                    <div class="conversation-time">
+                        ${formatTime(conversation.updatedAt)}
+                    </div>
+                </div>
+
+                <div class="conversation-summary" title="${escapeHtml(conversation.summary)}">
+                    ${escapeHtml(conversation.summary)}
+                </div>
+
+                <div class="conversation-meta">
+                    <div class="conversation-count">
+                        ${conversation.messageCount || 0} 条消息
+                    </div>
+                    <div class="conversation-status ${conversation.isExpired ? 'expired' : 'active'}">
+                        ${conversation.isExpired ? '已过期' : '活跃'}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // 打开对话
+    function openConversation(conversationId) {
+        selectedConversationId = conversationId;
+
+        // 调用Android接口打开聊天页面
+        window.Android?.openChat(conversationId);
+
+        // 更新选中状态
+        renderConversations();
+    }
+
+    // 创建新对话
+    async function createNewChat() {
+        try {
+            // 清除当前会话
+            window.Android?.clearSession();
+
+            // 初始化新会话
+            await initSession();
+
+            // 打开聊天页面
+            window.Android?.openChat('new');
+
+        } catch (error) {
+            console.error('创建新对话失败:', error);
+            window.Android?.showToast('创建新对话失败');
+        }
+    }
+
+    // 刷新对话列表
+    function refreshConversations() {
+        conversations = [];
+        currentPage = 0;
+        hasMore = true;
+        loadConversations();
+    }
+
+    // 显示上下文菜单
+    function showContextMenu(event, conversationId) {
+        event.preventDefault();
+
+        // 设置菜单位置
+        contextMenu.style.left = event.clientX + 'px';
+        contextMenu.style.top = event.clientY + 'px';
+        contextMenu.style.display = 'block';
+
+        // 创建菜单项
+        contextMenu.innerHTML = `
+            <div class="context-menu-item" onclick="loadToCache('${conversationId}'); hideContextMenu()">
+                加载到缓存
+            </div>
+            <div class="context-menu-item" onclick="renameConversation('${conversationId}'); hideContextMenu()">
+                重命名
+            </div>
+            <div class="context-menu-item delete" onclick="showDeleteModal('${conversationId}'); hideContextMenu()">
+                删除
+            </div>
+        `;
+
+        // 点击其他地方隐藏菜单
+        setTimeout(() => {
+            document.addEventListener('click', hideContextMenu, { once: true });
+        }, 100);
+    }
+
+    // 隐藏上下文菜单
+    function hideContextMenu() {
+        contextMenu.style.display = 'none';
+    }
+
+    // 加载对话到缓存
+    async function loadToCache(conversationId) {
+        try {
+            const sessionId = window.Android?.getSessionId() || SESSION_ID;
+            const response = await fetch(
+                `${API_BASE_URL}/api/session/${conversationId}/load-cache`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                }
+            );
+
+            if (response.ok) {
+                window.Android?.showToast('已加载到缓存');
+            } else {
+                throw new Error('加载失败');
+            }
+        } catch (error) {
+            console.error('加载到缓存失败:', error);
+            window.Android?.showToast('加载失败');
+        }
+    }
+
+    // 重命名对话
+    async function renameConversation(conversationId) {
+        const conversation = conversations.find(c => c.id === conversationId);
+        if (!conversation) return;
+
+        const newTitle = prompt('请输入新的标题', conversation.title);
+        if (newTitle && newTitle.trim()) {
+            try {
+                const sessionId = window.Android?.getSessionId() || SESSION_ID;
+                const response = await fetch(
+                    `${API_BASE_URL}/api/session/${conversationId}/rename`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'X-Session-Id': sessionId,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            title: newTitle.trim()
+                        })
+                    }
+                );
+
+                if (response.ok) {
+                    // 更新本地数据
+                    conversation.title = newTitle.trim();
+                    renderConversations();
+                    window.Android?.showToast('重命名成功');
+                } else {
+                    throw new Error('重命名失败');
+                }
+            } catch (error) {
+                console.error('重命名失败:', error);
+                window.Android?.showToast('重命名失败');
+            }
+        }
+    }
+
+    // 显示删除确认对话框
+    function showDeleteModal(conversationId) {
+        deleteTargetId = conversationId;
+        deleteModal.style.display = 'flex';
+    }
+
+    // 关闭删除确认对话框
+    function closeDeleteModal() {
+        deleteModal.style.display = 'none';
+        deleteTargetId = null;
+    }
+
+    // 确认删除
+    async function confirmDelete() {
+        if (!deleteTargetId) return;
+
+        try {
+            const sessionId = window.Android?.getSessionId() || SESSION_ID;
+            const response = await fetch(
+                `${API_BASE_URL}/api/session/${deleteTargetId}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                }
+            );
+
+            if (response.ok) {
+                // 从列表中移除
+                conversations = conversations.filter(c => c.id !== deleteTargetId);
+                renderConversations();
+                window.Android?.showToast('删除成功');
+            } else {
+                throw new Error('删除失败');
+            }
+        } catch (error) {
+            console.error('删除失败:', error);
+            window.Android?.showToast('删除失败');
+        } finally {
+            closeDeleteModal();
+        }
+    }
+
+    // 显示加载状态
+    function showLoading() {
+        hideAllStates();
+        loadingState.style.display = 'flex';
+    }
+
+    // 隐藏加载状态
+    function hideLoading() {
+        loadingState.style.display = 'none';
+    }
+
+    // 显示空状态
+    function showEmptyState() {
+        hideAllStates();
+        emptyState.style.display = 'block';
+    }
+
+    // 显示错误状态
+    function showErrorState() {
+        hideAllStates();
+        errorState.style.display = 'block';
+    }
+
+    // 隐藏所有状态
+    function hideAllStates() {
+        loadingState.style.display = 'none';
+        emptyState.style.display = 'none';
+        errorState.style.display = 'none';
+        conversationList.style.display = 'block';
+    }
+
+    // 设置事件监听器
+    function setupEventListeners() {
+        // 滚动加载更多
+        window.addEventListener('scroll', function() {
+            const scrollTop = document.documentElement.scrollTop;
+            const scrollHeight = document.documentElement.scrollHeight;
+            const clientHeight = document.documentElement.clientHeight;
+
+            if (scrollTop + clientHeight >= scrollHeight - 100) {
+                loadConversations();
+            }
+        });
+
+        // ESC键关闭菜单和模态框
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                hideContextMenu();
+                closeDeleteModal();
+            }
+        });
+    }
+
+    // 工具函数：格式化时间
+    function formatTime(timestamp) {
+        if (!timestamp) return '未知时间';
+
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return '刚刚';
+        if (diffMins < 60) return `${diffMins}分钟前`;
+        if (diffHours < 24) return `${diffHours}小时前`;
+        if (diffDays < 7) return `${diffDays}天前`;
+
+        return date.toLocaleDateString('zh-CN', {
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    // 工具函数：HTML转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 暴露全局函数供Android调用
+    window.refreshConversations = refreshConversations;
+    window.createNewChat = createNewChat;
+    window.openConversation = openConversation;
+</script>
+</body>
+</html>

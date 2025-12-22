@@ -164,28 +164,27 @@ class ChatRepository(
                 var content = ""
                 var reasoningContent = ""
 
-                // 处理文本内容
-                val text = output.optString("text", "").trim()
-                if (text.isNotEmpty()) {
-                    content = text
-                    Log.v(TAG, "解析到文本: ${text.take(50)}...")
-                }
+                // 处理 choices 数组
+                val choices = output.optJSONArray("choices")
+                if (choices != null && choices.length() > 0) {
+                    val firstChoice = choices.getJSONObject(0)
+                    val message = firstChoice.optJSONObject("message")
 
-                // 处理思考过程（如果开启了深度思考）
-                val thoughts = output.optJSONArray("thoughts")
-                if (thoughts != null && thoughts.length() > 0) {
-                    val reasoningBuilder = StringBuilder()
-                    for (i in 0 until thoughts.length()) {
-                        val thought = thoughts.getJSONObject(i)
-                        if (thought.optString("actionType") == "reasoning") {
-                            val thoughtText = thought.optString("response", "").trim()
-                            if (thoughtText.isNotEmpty()) {
-                                reasoningBuilder.append(thoughtText).append("\n")
-                                Log.v(TAG, "解析到思考过程[${i+1}]: ${thoughtText.take(50)}...")
-                            }
+                    if (message != null) {
+                        // 获取 content 字段
+                        val textContent = message.optString("content", "").trim()
+                        if (textContent.isNotEmpty()) {
+                            content = textContent
+                            Log.v(TAG, "解析到内容: ${textContent.take(50)}...")
+                        }
+
+                        // 获取 reasoningContent 字段
+                        val reasoning = message.optString("reasoningContent", "").trim()
+                        if (reasoning.isNotEmpty()) {
+                            reasoningContent = reasoning
+                            Log.v(TAG, "解析到思考过程: ${reasoning.take(50)}...")
                         }
                     }
-                    reasoningContent = reasoningBuilder.toString().trim()
                 }
 
                 // 返回响应（即使是空内容也要返回，以便处理流式中的中间状态）
@@ -195,7 +194,7 @@ class ChatRepository(
                 )
             }
 
-            // 直接文本响应
+            // 直接文本响应（兼容旧格式）
             val text = json.optString("text", "").trim()
             if (text.isNotEmpty()) {
                 Log.v(TAG, "直接文本响应: ${text.take(50)}...")
@@ -225,7 +224,6 @@ class ChatRepository(
         }
     }
 
-    // 获取会话列表
     // 获取会话列表 - 修改返回类型为 List<Conversation>
     suspend fun getConversations(page: Int = 0, pageSize: Int = 20): List<Conversation> {
         return withContext(Dispatchers.IO) {
