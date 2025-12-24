@@ -1,0 +1,170 @@
+<!-- index-android.html - Android专用入口 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>小夏 - 您的智能伙伴</title>
+
+    <!-- Android特定meta -->
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- 样式文件 -->
+    <link href="./css/base.css" rel="stylesheet">
+    <link href="./css/layout.css" rel="stylesheet">
+    <link href="./css/sidebar.css" rel="stylesheet">
+    <link href="./css/messages.css" rel="stylesheet">
+    <link href="./css/welcome.css" rel="stylesheet">
+    <link href="./css/markdown.css" rel="stylesheet">
+    <link href="./css/forms.css" rel="stylesheet">
+    <link href="./css/responsive.css" rel="stylesheet">
+    <link href="./css/mobile.css" rel="stylesheet">
+    <link href="./css/android.css" rel="stylesheet">
+
+    <!-- 脚本文件 -->
+    <script src="./js/echarts.min.js"></script>
+    <script src="./js/marked.min.js"></script>
+    <script src="./js/vue.global.min.js"></script>
+
+    <!-- Android适配器 -->
+    <script src="./js/android-adapter.js"></script>
+
+    <!-- API服务 -->
+    <script src="./js/apiService.js"></script>
+
+    <!-- 主应用 -->
+    <script type="module" src="./js/app.js"></script>
+
+    <script>
+        // Android初始化脚本
+        (function() {
+            // 检查是否在Android WebView中
+            const isAndroidWebView = !!window.AndroidInterface ||
+                                    /XiaoxiaApp\/1\.0/.test(navigator.userAgent);
+
+            if (isAndroidWebView) {
+                console.log('运行在Android WebView中');
+
+                // 设置Android特定配置
+                window.__ANDROID__ = true;
+
+                // 禁用某些Web功能
+                if (window.AndroidInterface) {
+                    // 检查网络状态
+                    window.checkNetworkStatus = function() {
+                        return window.AndroidInterface.isOnline ?
+                               window.AndroidInterface.isOnline() :
+                               navigator.onLine;
+                    };
+
+                    // 添加返回键监听
+                    window.handleBackButton = function() {
+                        if (window.AndroidInterface && window.AndroidInterface.canGoBack) {
+                            return window.AndroidInterface.canGoBack();
+                        }
+                        return false;
+                    };
+                }
+
+                // 修改Favicon
+                const link = document.createElement('link');
+                link.rel = 'icon';
+                link.href = './images/profile.png';
+                document.head.appendChild(link);
+            }
+        })();
+    </script>
+</head>
+<body>
+<!-- 应用容器 -->
+<div id="app">
+    <!-- 移动端顶部栏 -->
+    <div class="mobile-header">
+        <div class="mobile-header-left">
+            <button class="mobile-menu-btn" @click="toggleSidebar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+        </div>
+        <div class="mobile-header-title">
+            {{ currentConversationTitle }}
+        </div>
+        <div class="mobile-header-right">
+            <button class="mobile-menu-btn" @click="clearMessages" title="新建对话">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 侧边栏遮罩 -->
+    <div class="sidebar-overlay" :class="{ 'active': sidebarActive }" @click="toggleSidebar"></div>
+
+    <!-- 侧边栏 -->
+    <div class="sidebar" :class="{ 'active': sidebarActive }">
+        <!-- 移动端关闭按钮 -->
+        <button class="sidebar-close-btn" @click="toggleSidebar">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+
+        <div class="sidebar-header">
+            <!-- 侧边栏内容保持不变 -->
+            <!-- 使用原Web系统的侧边栏HTML结构 -->
+        </div>
+
+        <!-- 对话历史列表 -->
+        <div class="conversation-list">
+            <!-- 使用原Web系统的对话列表结构 -->
+        </div>
+    </div>
+
+    <!-- 消息区域 -->
+    <div class="message-container">
+        <!-- 使用原Web系统的消息区域结构 -->
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-area">
+        <!-- 使用原Web系统的输入区域结构 -->
+    </div>
+</div>
+
+<!-- Android特定脚本 -->
+<script>
+    // 处理URL参数
+    (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const conversationId = urlParams.get('conversationId');
+        const isNew = urlParams.get('new') === 'true';
+
+        if (conversationId) {
+            // 存储到全局变量，供Vue应用使用
+            window.__INITIAL_CONVERSATION_ID__ = conversationId;
+        }
+
+        if (isNew) {
+            window.__SHOULD_CREATE_NEW__ = true;
+        }
+
+        // 发送页面加载完成事件到Android
+        window.addEventListener('load', function() {
+            if (window.AndroidInterface && window.AndroidInterface.onPageLoaded) {
+                setTimeout(() => {
+                    window.AndroidInterface.onPageLoaded(
+                        window.location.href,
+                        document.title
+                    );
+                }, 500);
+            }
+        });
+    })();
+</script>
+</body>
+</html>
