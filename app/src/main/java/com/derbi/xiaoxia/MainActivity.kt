@@ -2,6 +2,7 @@ package com.derbi.xiaoxia
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -9,7 +10,6 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
@@ -25,9 +25,9 @@ import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -37,7 +37,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CircleCrop
 import com.bumptech.glide.request.RequestOptions
-import com.derbi.xiaoxia.adapters.MessageAdapter
 import com.derbi.xiaoxia.adapters.Suggestion
 import com.derbi.xiaoxia.adapters.WelcomeSuggestionAdapter
 import com.derbi.xiaoxia.models.Conversation
@@ -45,6 +44,7 @@ import com.derbi.xiaoxia.models.Message
 import com.derbi.xiaoxia.network.ApiService
 import com.derbi.xiaoxia.repository.ChatRepository
 import com.derbi.xiaoxia.repository.impl.SessionManagerImpl
+import com.derbi.xiaoxia.ui.SettingsActivity
 import com.derbi.xiaoxia.ui.WebViewActivity
 import com.derbi.xiaoxia.utils.DateTypeAdapter
 import com.derbi.xiaoxia.viewmodel.ChatViewModel
@@ -52,12 +52,6 @@ import com.derbi.xiaoxia.viewmodel.ChatViewModelFactory
 import com.google.android.material.navigation.NavigationView
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.google.gson.TypeAdapter
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonToken
-import com.google.gson.stream.JsonWriter
-import kotlinx.coroutines.delay
-import java.io.IOException
 import kotlinx.coroutines.launch
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -74,11 +68,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private lateinit var webView: WebView
     private lateinit var inputEditText: EditText
     private lateinit var fabSend: ImageButton
-    private lateinit var switchDeepThinking: SwitchCompat
-    private lateinit var switchWebSearch: SwitchCompat
+    private lateinit var btnDeepThinking: TextView
+    private lateinit var btnWebSearch: TextView
     private lateinit var toolbarTitle: TextView
-
-    private lateinit var messageAdapter: MessageAdapter
 
     private lateinit var welcomeContainer: View
 
@@ -90,18 +82,21 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private var isUserScrolling = false
 
-    private lateinit var profileImageView: ImageView  // 添加头像 ImageView 引用
+    private lateinit var profileImageView: ImageView
 
-    private lateinit var navProfileImageView: ImageView  // 添加头像 ImageView 引用
+    private lateinit var navProfileImageView: ImageView
 
     private lateinit var conversationRecyclerView: RecyclerView
     private lateinit var conversationAdapter: ConversationAdapter
     private var longPressConversationId: String? = null
     private var longPressTimer: Timer? = null
 
+    // 主题切换相关
+    private var currentColorIndex = 0
+    private val themeColors = listOf(R.color.theme_white, R.color.theme_blue, R.color.theme_pink)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installSplashScreen()
         setContentView(R.layout.activity_main)
 
         val gson = GsonBuilder()
@@ -110,7 +105,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             .create()
 
         val retrofit = Retrofit.Builder()
-            .baseUrl("https://derbi.net.cn") // Replace with your base URL
+            .baseUrl("https://derbi.net.cn")
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
 
@@ -121,15 +116,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         viewModel = ViewModelProvider(this, viewModelFactory).get(ChatViewModel::class.java)
 
         initViews()
-        setupMoreButton() // 新增：设置更多按钮
+        setupSettingButton()
         setupWelcomeGrid()
         setupWebView()
         setupClickListeners()
         setupInputListener()
         setupBackPressedHandler()
-        setupConversationList() // 新增：初始化对话列表
+        setupConversationList()
 
-        // 加载头像图片
         loadProfileImage()
         startCollectingState()
 
@@ -141,8 +135,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         return true
     }
 
-
-
     private fun startCollectingState() {
         lifecycleScope.launch {
             viewModel.chatState.collect { state ->
@@ -152,8 +144,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
                 updateConversationTitle(state.selectedConversation?.title)
 
-                switchDeepThinking.isChecked = state.deepThinkingEnabled
-                switchWebSearch.isChecked = state.webSearchEnabled
+                btnDeepThinking.isSelected = state.deepThinkingEnabled
+                btnWebSearch.isSelected = state.webSearchEnabled
             }
         }
 
@@ -165,8 +157,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun updateLoadingState(isSending: Boolean, isLoading: Boolean) {
-        //Log.d("MainActivity", "updateLoadingState: isSending=$isSending, isLoading=$isLoading")
-
         this.isSending = isSending
         fabSend.isEnabled = !isSending
         if (isSending) {
@@ -185,51 +175,34 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         updateWebViewMessages(messages)
     }
 
-    // 新的 WebView 消息更新方法
     private fun updateWebViewMessages(messages: List<Message>) {
         if (!::webView.isInitialized || messages.isEmpty()) return
 
-        // 将消息转换为 JSON 格式
-        val messagesJson = messages.map { message ->
-            when (message) {
-                is Message.UserMessage -> mapOf(
-                    "type" to "user",
-                    "id" to message.id,
-                    "content" to message.content,
-                    "timestamp" to message.timestamp
-                )
+        val messagesJson = messages.map { msg ->
+            when (msg) {
                 is Message.AIMessage -> mapOf(
+                    "id" to msg.id,
                     "type" to "ai",
-                    "id" to message.id,
-                    "content" to message.content,
-                    "reasoningContent" to message.reasoningContent,
-                    "showReasoning" to message.showReasoning,
-                    "showDisclaimer" to message.showDisclaimer,
-                    "timestamp" to message.timestamp
+                    "content" to msg.content,
+                    "reasoningContent" to msg.reasoningContent,
+                    "showReasoning" to msg.showReasoning,
+                    "isReceiving" to msg.isReceiving,
+                    "timestamp" to msg.timestamp,
+                    "showDisclaimer" to msg.showDisclaimer
                 )
-                is Message.LoadingMessage -> mapOf(
-                    "type" to "loading"
+                is Message.UserMessage -> mapOf(
+                    "id" to msg.id,
+                    "type" to "user",
+                    "content" to msg.content,
+                    "timestamp" to msg.timestamp
                 )
-                else -> null
+                else -> mapOf("type" to "loading")
             }
-        }.filterNotNull()
+        }
 
-        // 转换为 JSON 字符串
         val jsonString = Gson().toJson(messagesJson)
-
         runOnUiThread {
-            webView.evaluateJavascript("""
-            (function() {
-                // 先清空所有消息
-                clearAllMessages();
-                
-                // 添加新消息
-                var messages = $jsonString;
-                messages.forEach(function(msg) {
-                    addMessage(msg);
-                });
-            })();
-        """.trimIndent(), null)
+            webView.evaluateJavascript("syncMessages($jsonString);", null)
         }
     }
 
@@ -238,19 +211,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         navigationView = findViewById(R.id.navigation_view)
         inputEditText = findViewById(R.id.input_message)
         fabSend = findViewById(R.id.fab_send)
-        switchDeepThinking = findViewById(R.id.switch_deep_thinking)
-        switchWebSearch = findViewById(R.id.switch_web_search)
+        btnDeepThinking = findViewById(R.id.btn_deep_thinking)
+        btnWebSearch = findViewById(R.id.btn_web_search)
         toolbarTitle = findViewById(R.id.toolbar_title)
         profileImageView = findViewById(R.id.profile_image)
 
-        // 初始化 WebView
         webView = findViewById(R.id.webview_messages)
         setupWebView()
 
-        // 获取 HeaderView (通常是第 0 个)
         val headerView = navigationView.getHeaderView(0)
-
-        // 从 headerView 中查找 RecyclerView
         conversationRecyclerView = headerView.findViewById(R.id.recycler_conversations)
 
         navigationView.setNavigationItemSelectedListener(this)
@@ -261,27 +230,88 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         toolbar.setNavigationOnClickListener {
             drawerLayout.openDrawer(GravityCompat.START)
-            viewModel.fetchConversations(false)
+            viewModel.fetchConversations(true)
         }
 
         welcomeContainer = findViewById(R.id.welcome_container)
+
+        // 初始化时立即同步主题
+        changeThemeColor(themeColors[currentColorIndex])
+
+        // 点击标题切换主题颜色
+        toolbarTitle.setOnClickListener {
+            currentColorIndex = (currentColorIndex + 1) % themeColors.size
+            changeThemeColor(themeColors[currentColorIndex])
+        }
     }
 
-    // 设置 WebView
-    private fun setupWebView() {
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = true
-            setSupportZoom(false)
-            builtInZoomControls = false
-            displayZoomControls = false
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            setSupportMultipleWindows(true)
+    /**
+     * 动态切换顶部导航栏及侧边栏 Header 颜色主题
+     */
+    private fun changeThemeColor(colorResId: Int) {
+        val color = ContextCompat.getColor(this, colorResId)
+        val appBar = findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.app_bar)
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+
+        // 1. 设置首页顶部背景色
+        appBar.setBackgroundColor(color)
+        toolbar.setBackgroundColor(color)
+        window.statusBarColor = color
+
+        // 2. 处理侧边栏 Header 同步
+        val headerView = navigationView.getHeaderView(0)
+        val navHeaderRoot = headerView.findViewById<View>(R.id.nav_header_root)
+        val navName = headerView.findViewById<TextView>(R.id.textView_name)
+        val navMotto = headerView.findViewById<TextView>(R.id.textView_motto)
+        val navMoreBtn = headerView.findViewById<ImageButton>(R.id.btn_more)
+        val historyLabel = headerView.findViewById<TextView>(R.id.textView_history_label)
+
+
+        navHeaderRoot?.setBackgroundColor(color)
+
+        // 3. 根据背景色调整文字和图标颜色
+        val isWhiteTheme = colorResId == R.color.theme_white
+        val contentColor = if (isWhiteTheme) Color.BLACK else Color.WHITE
+        
+        // 首页顶部同步
+        toolbarTitle.setTextColor(contentColor)
+        toolbar.navigationIcon?.setTint(contentColor)
+        toolbar.overflowIcon?.setTint(contentColor)
+        for (i in 0 until toolbar.menu.size()) {
+            toolbar.menu.getItem(i).icon?.setTint(contentColor)
         }
 
-        // 添加 JavaScript 接口
+        // 侧边栏 Header 内容同步
+        navName?.setTextColor(contentColor)
+        navMotto?.setTextColor(contentColor)
+        navMotto?.alpha = if (isWhiteTheme) 0.6f else 0.8f
+        navMoreBtn?.imageTintList = android.content.res.ColorStateList.valueOf(contentColor)
+        
+        // “对话历史”标签颜色根据主题动态调整
+        historyLabel?.setTextColor(if (isWhiteTheme) ContextCompat.getColor(this, R.color.text_secondary) else color)
+
+        // 4. 调整系统状态栏图标颜色
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = isWhiteTheme
+    }
+
+    private fun setupWebView() {
+        webView.apply {
+            setBackgroundColor(0)
+            settings.apply {
+                javaScriptEnabled = true
+                allowFileAccessFromFileURLs = true
+                allowUniversalAccessFromFileURLs = true
+                domStorageEnabled = true
+                allowFileAccess = true
+                setSupportZoom(false)
+                builtInZoomControls = false
+                displayZoomControls = false
+                loadWithOverviewMode = true
+                useWideViewPort = true
+                setSupportMultipleWindows(true)
+            }
+        }
+
         webView.addJavascriptInterface(WebAppInterface(), "AndroidInterface")
 
         webView.webViewClient = object : WebViewClient() {
@@ -297,18 +327,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                // 页面加载完成后，初始化消息（如果有）
                 if (viewModel.chatState.value.messages.isNotEmpty()) {
                     updateWebViewMessages(viewModel.chatState.value.messages)
                 }
             }
         }
 
-        // 加载本地 HTML 文件
         webView.loadUrl("file:///android_asset/chat.html")
     }
 
-    // JavaScript 接口类
     inner class WebAppInterface {
         @JavascriptInterface
         fun openLink(url: String) {
@@ -318,32 +345,22 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
     }
 
-    /**
-     * 加载头像图片
-     */
     private fun loadProfileImage() {
         try {
-            // 方法1：使用 Glide 加载图片（推荐）
             loadProfileWithGlide()
         } catch (e: Exception) {
             Log.e("ProfileImage", "加载头像失败: ${e.message}")
         }
     }
 
-    /**
-     * 使用 Glide 加载头像（最可靠的方法）
-     */
     private fun loadProfileWithGlide() {
-        // 检查是否安装了 Glide
         try {
             Glide.with(this)
-                .asBitmap() // 确保作为Bitmap加载，而不是可能被当作视频
+                .asBitmap()
                 .load(R.drawable.profile)
                 .apply(RequestOptions.bitmapTransform(CircleCrop()))
                 .into(profileImageView)
 
-            // 2. 导航栏头像：延迟初始化
-            // 先确保 navigationView 已经初始化了头部视图
             if (!::navProfileImageView.isInitialized) {
                 val headerView = navigationView.getHeaderView(0)
                 if (headerView != null) {
@@ -351,23 +368,18 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 }
             }
 
-            // 如果成功初始化了，就加载图片
             if (::navProfileImageView.isInitialized) {
                 Glide.with(this)
-                    .asBitmap() // 确保作为Bitmap加载，而不是可能被当作视频
+                    .asBitmap()
                     .load(R.drawable.profile)
                     .into(navProfileImageView)
-            } else {
-                Log.w("ProfileImage", "无法初始化导航栏头像 ImageView")
-                // 尝试直接使用 XML 中设置的图片
             }
-
-            Log.d("ProfileImage", "使用 Glide 加载头像成功")
         } catch (e: Exception) {
-            // 降级方案
             Log.e("ProfileImage", "Glide 加载失败: ${e.message}")
             profileImageView.setImageResource(R.drawable.profile)
-            navProfileImageView.setImageResource(R.drawable.profile)
+            if (::navProfileImageView.isInitialized) {
+                navProfileImageView.setImageResource(R.drawable.profile)
+            }
         }
     }
 
@@ -390,18 +402,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         recyclerViewExamples.adapter = adapter
     }
 
-    // 修改 checkChatState 方法
     private fun checkChatState(showWelcome: Boolean, isEmpty: Boolean) {
         if (showWelcome || isEmpty) {
             welcomeContainer.visibility = View.VISIBLE
-            webView.visibility = View.GONE
+            webView.visibility = View.INVISIBLE
         } else {
             welcomeContainer.visibility = View.GONE
             webView.visibility = View.VISIBLE
         }
     }
-
-
 
     private fun setupBackPressedHandler() {
         val callback = object : OnBackPressedCallback(true) {
@@ -410,11 +419,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                     drawerLayout.closeDrawer(GravityCompat.START)
                     return
                 }
-
                 handleBackPress()
             }
         }
-
         onBackPressedDispatcher.addCallback(this, callback)
     }
 
@@ -441,12 +448,16 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             showToast("附件上传功能开发中...")
         }
 
-        switchDeepThinking.setOnCheckedChangeListener { _, isChecked ->
-            viewModel.updateDeepThinking(isChecked)
+        btnDeepThinking.setOnClickListener {
+            val newState = !it.isSelected
+            it.isSelected = newState
+            viewModel.updateDeepThinking(newState)
         }
 
-        switchWebSearch.setOnCheckedChangeListener { _, isChecked ->
-            viewModel.updateWebSearch(isChecked)
+        btnWebSearch.setOnClickListener {
+            val newState = !it.isSelected
+            it.isSelected = newState
+            viewModel.updateWebSearch(newState)
         }
     }
 
@@ -474,35 +485,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private fun sendMessage() {
         val userInput = inputEditText.text.toString().trim()
-        Log.d("MainActivity", "尝试发送消息: $userInput, isSending=$isSending")
-
-        if (userInput.isEmpty()) {
-            Log.d("MainActivity", "消息为空，不发送")
-            return
-        }
-
-        if (isSending) {
-            Log.d("MainActivity", "正在发送中，跳过")
-            return
-        }
-
-        if (welcomeContainer.visibility == View.VISIBLE) {
-            welcomeContainer.visibility = View.GONE
-        }
+        if (userInput.isEmpty() || isSending) return
 
         inputEditText.text.clear()
-
-        // Hide the keyboard
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(inputEditText.windowToken, 0)
 
-        // 重置滚动状态，允许自动滚动
         isUserScrolling = false
-        // 强制滚动到底部，确保新消息可见
-        Log.d("MainActivity", "sendMessage 调用 forceScrollToBottom")
         forceScrollToBottom()
-
-        Log.d("MainActivity", "调用 viewModel.sendMessage")
         viewModel.sendMessage(userInput)
     }
 
@@ -510,12 +500,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         webView.evaluateJavascript("scrollToBottom();", null)
     }
 
-    private fun clearMessages() {
-        viewModel.clearMessages()
-    }
-
     private fun openLinkInWebView(url: String, title: String = "链接") {
-        Log.d("MainActivity", "打开链接: $url")
         val intent = Intent(this, WebViewActivity::class.java).apply {
             putExtra(WebViewActivity.EXTRA_URL_TO_LOAD, url)
             putExtra(WebViewActivity.EXTRA_TITLE, title)
@@ -539,74 +524,63 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private fun setupConversationList() {
         conversationAdapter = ConversationAdapter { conversation ->
-            // 点击加载对话
             loadConversation(conversation)
         }
 
         conversationRecyclerView.layoutManager = LinearLayoutManager(this)
         conversationRecyclerView.adapter = conversationAdapter
-    }
 
-    private fun setupMoreButton() {
-        val headerView = navigationView.getHeaderView(0)
-        val moreButton = headerView.findViewById<ImageButton>(R.id.btn_more)
+        conversationRecyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                if (dy > 0) {
+                    val layoutManager = recyclerView.layoutManager as LinearLayoutManager
+                    val visibleItemCount = layoutManager.childCount
+                    val totalItemCount = layoutManager.itemCount
+                    val firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition()
 
-        moreButton.setOnClickListener {
-            showMoreMenu(it)
-        }
-    }
-
-    private fun showMoreMenu(anchor: View) {
-        val popup = PopupMenu(this, anchor)
-        popup.menuInflater.inflate(R.menu.more_menu, popup.menu)
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.menu_new_chat -> {
-                    clearMessages()
-                    true
+                    if ((visibleItemCount + firstVisibleItemPosition) >= totalItemCount - 2
+                        && firstVisibleItemPosition >= 0) {
+                        viewModel.fetchConversations(false)
+                    }
                 }
-                R.id.menu_settings -> {
-                    showToast("设置功能开发中...")
-                    true
-                }
-                R.id.menu_about -> {
-                    openLinkInWebView("https://about.xiaoxia.com", "关于小夏")
-                    true
-                }
-                else -> false
             }
+        })
+    }
+
+    private fun setupSettingButton() {
+        val headerView = navigationView.getHeaderView(0)
+        
+        val openSettings = {
+            val intent = Intent(this, SettingsActivity::class.java)
+            intent.putExtra("theme_color_res", themeColors[currentColorIndex])
+            startActivity(intent)
         }
 
-        popup.show()
+        headerView.findViewById<ImageButton>(R.id.btn_more).setOnClickListener {
+            openSettings()
+        }
+
+        // 处理头像点击
+        headerView.findViewById<View>(R.id.nav_avatar_container)?.setOnClickListener {
+            openSettings()
+        }
+
+        // 处理文字点击
+        headerView.findViewById<View>(R.id.nav_text_container)?.setOnClickListener {
+            openSettings()
+        }
     }
 
     private fun updateConversationList(conversations: List<Conversation>) {
-        Log.d("MainActivity", "更新对话列表，数量: ${conversations.size}")
         conversationAdapter.submitList(conversations)
     }
 
     private fun loadConversation(conversation: Conversation) {
         viewModel.loadConversation(conversation.id)
         drawerLayout.closeDrawer(GravityCompat.START)
-
-        // 添加布局改变监听器，这比单纯的插入监听更准确
-        val layoutListener = object : View.OnLayoutChangeListener {
-            override fun onLayoutChange(
-                v: View?, left: Int, top: Int, right: Int, bottom: Int,
-                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-            ) {
-              /*  // 只要布局发生变化（比如内容填充满了），就执行强制滚动
-                messageRecyclerView.removeOnLayoutChangeListener(this)
-                messageRecyclerView.post {
-                    forceScrollToBottom()
-                }*/
-            }
-        }
-        //messageRecyclerView.addOnLayoutChangeListener(layoutListener)
     }
 
-    // 对话历史适配器
     inner class ConversationAdapter(
         private val onItemClick: (Conversation) -> Unit
     ) : RecyclerView.Adapter<ConversationAdapter.ViewHolder>() {
@@ -623,15 +597,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         fun selectConversation(conversationId: String?) {
             val newPosition = conversations.indexOfFirst { it.id == conversationId }
             val oldPosition = selectedPosition
-
             selectedPosition = newPosition
-
-            if (oldPosition != -1) {
-                notifyItemChanged(oldPosition)
-            }
-            if (selectedPosition != -1) {
-                notifyItemChanged(selectedPosition)
-            }
+            if (oldPosition != -1) notifyItemChanged(oldPosition)
+            if (selectedPosition != -1) notifyItemChanged(selectedPosition)
         }
 
         inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -640,7 +608,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             val time: TextView = itemView.findViewById(R.id.text_time)
             val deleteBtn: Button = itemView.findViewById(R.id.btn_delete)
             val indicator: View = itemView.findViewById(R.id.indicator_selected)
-            val root: RelativeLayout = itemView.findViewById<RelativeLayout>(R.id.root)
+            val root: RelativeLayout = itemView.findViewById(R.id.root)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -651,39 +619,26 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val conversation = conversations[position]
-
             holder.title.text = conversation.title
             holder.summary.text = conversation.summary
             holder.time.text = formatTime(conversation.updatedAt)
 
-            // 设置选中状态
             holder.indicator.visibility = if (position == selectedPosition) View.VISIBLE else View.GONE
             holder.root.isSelected = position == selectedPosition
 
-            // 点击事件
             holder.root.setOnClickListener {
                 onItemClick(conversation)
                 selectConversation(conversation.id)
             }
 
-            // 长按事件
             holder.root.setOnLongClickListener {
                 showDeleteButton(holder, conversation)
                 true
             }
 
-            // 删除按钮点击事件
             holder.deleteBtn.setOnClickListener {
                 deleteConversation(conversation)
                 hideDeleteButton(holder)
-            }
-
-            // 点击其他地方隐藏删除按钮
-            holder.root.setOnTouchListener { v, event ->
-                if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-                    hideDeleteButton(holder)
-                }
-                false
             }
         }
 
@@ -693,8 +648,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private fun showDeleteButton(holder: ConversationAdapter.ViewHolder, conversation: Conversation) {
         holder.deleteBtn.visibility = View.VISIBLE
         longPressConversationId = conversation.id
-
-        // 5秒后自动隐藏删除按钮
         longPressTimer?.cancel()
         longPressTimer = Timer().apply {
             schedule(object : TimerTask() {
@@ -728,5 +681,4 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         drawerLayout.closeDrawer(GravityCompat.START)
         return true
     }
-
 }

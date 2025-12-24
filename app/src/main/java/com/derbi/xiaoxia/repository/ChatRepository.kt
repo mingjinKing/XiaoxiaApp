@@ -70,7 +70,17 @@ class ChatRepository(
                 webSearch = webSearch
             )
 
-            val responseBody = apiService.sendMessage(request, sessionId)
+            // 修改这里：处理 Response<ResponseBody>
+            Log.d("ChatRepository", "开始发送消息, sessionId: $sessionId")
+            val response = apiService.sendMessage(request, sessionId)
+            
+            if (!response.isSuccessful) {
+                val errorMsg = response.errorBody()?.string() ?: "Unknown error"
+                Log.e(TAG, "Server error: ${response.code()} $errorMsg")
+                throw Exception("服务器错误 (${response.code()})")
+            }
+
+            val responseBody = response.body() ?: throw Exception("响应正文为空")
 
             Log.d(TAG, "收到流式响应")
 
@@ -158,6 +168,74 @@ class ChatRepository(
 
             val json = JSONObject(data)
 
+            // 检查是否有 usage 字段，这是新格式的特征
+            val hasUsage = json.has("usage")
+            val hasRequestId = json.has("requestId")
+
+            if (hasUsage && hasRequestId) {
+                // 这是新的报文格式
+                return parseNewFormat(json)
+            } else {
+                // 这是旧的报文格式
+                return parseOldFormat(json)
+            }
+
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse SSE data: ${data.take(200)}...", e)
+            return MessageResponse(content = data.takeIf { it.length < 1000 } ?: "")
+        }
+    }
+
+    // ChatRepository.kt - 修改 parseNewFormat 方法
+    private fun parseNewFormat(json: JSONObject): MessageResponse? {
+        try {
+            val output = json.optJSONObject("output")
+            if (output == null) {
+                Log.v(TAG, "output字段为空")
+                return MessageResponse(content = "")
+            }
+
+            val choices = output.optJSONArray("choices")
+            if (choices == null || choices.length() == 0) {
+                Log.v(TAG, "choices字段为空或空数组")
+                return MessageResponse(content = "")
+            }
+
+            val firstChoice = choices.getJSONObject(0)
+            val message = firstChoice.optJSONObject("message")
+            if (message == null) {
+                Log.v(TAG, "message字段为空")
+                return MessageResponse(content = "")
+            }
+
+            // 从新位置获取内容
+            val content = message.optString("content", "").trim()
+            val reasoningContent = message.optString("reasoningContent", "").trim()
+
+            Log.v(TAG, "解析新格式: 内容长度=${content.length}, 思考长度=${reasoningContent.length}")
+
+            // 新增：检查是否是最终消息
+            val finishReason = firstChoice.optString("finishReason", null)
+            val isFinal = finishReason == "stop" || finishReason == "length" || finishReason == "tool_calls"
+
+            // 返回响应
+            return MessageResponse(
+                content = content,
+                reasoningContent = if (reasoningContent.isNotBlank()) reasoningContent else null,
+                // 新增：标记是否是最终消息
+                isFinal = isFinal,
+                // 可选：传递 finishReason 用于调试
+                finishReason = finishReason
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "解析新格式失败", e)
+            return MessageResponse(content = "")
+        }
+    }
+
+    private fun parseOldFormat(json: JSONObject): MessageResponse? {
+        try {
             // 优先处理 output 字段
             val output = json.optJSONObject("output")
             if (output != null) {
@@ -207,8 +285,8 @@ class ChatRepository(
             return MessageResponse(content = "")
 
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse SSE data: ${data.take(200)}...", e)
-            return MessageResponse(content = data.takeIf { it.length < 1000 } ?: "")
+            Log.w(TAG, "Failed to parse old format data", e)
+            return MessageResponse(content = "")
         }
     }
 
@@ -260,13 +338,19 @@ class ChatRepository(
         }
     }
 
-    // ChatRepository.kt - 修改 getConversationDetail 方法
     // 获取会话详情
     suspend fun getConversationDetail(sessionId: String): List<ConversationTurn> {
         return withContext(Dispatchers.IO) {
             try {
                 val currentSessionId = sessionManager.getSessionId() ?: ""
                 val response = apiService.getConversationTurns(sessionId, currentSessionId)
+                
+                // 加载完成后，将当前 SessionId 设置为加载历史对话的 SessionId
+                if (sessionId.isNotEmpty()) {
+                    sessionManager.saveSessionId(sessionId)
+                    Log.d(TAG, "加载历史对话详情成功，更新当前 SessionId: $sessionId")
+                }
+                
                 response.turns  // 从响应中提取 turns 字段
             } catch (e: Exception) {
                 Log.e("ChatRepository", "getConversationDetail error", e)
@@ -294,6 +378,13 @@ class ChatRepository(
             try {
                 val currentSessionId = sessionManager.getSessionId() ?: ""
                 val response = apiService.loadSessionToCache(sessionId, currentSessionId)
+                
+                // 加载完成后，将当前 SessionId 设置为加载历史对话的 SessionId
+                if (response.isSuccessful && sessionId.isNotEmpty()) {
+                    sessionManager.saveSessionId(sessionId)
+                    Log.d(TAG, "加载历史对话到缓存成功，更新当前 SessionId: $sessionId")
+                }
+                
                 response.isSuccessful
             } catch (e: Exception) {
                 Log.e("ChatRepository", "loadSessionToCache error", e)
@@ -307,7 +398,10 @@ class ChatRepository(
 data class MessageResponse(
     val content: String,
     val reasoningContent: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    // 新增字段
+    val isFinal: Boolean = false,
+    val finishReason: String? = null
 )
 
 data class InitSessionResponse(

@@ -1,13 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 系统启动页主题 (冷启动瞬间展示) -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- 背景颜色 -->
         <item name="windowSplashScreenBackground">@android:color/white</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_background</item>
-        <item name="postSplashScreenTheme">@style/Theme.Xiaoxia</item>
+        <!-- 【关键】隐藏图标的代码应放在这里，设置为透明 -->
+        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <!-- 启动完成后跳转到的 Activity 主题 -->
+        <item name="postSplashScreenTheme">@style/Theme.App.Splash</item>
+    </style>
+
+    <!-- SplashActivity 正式进入后的主题 -->
+    <style name="Theme.App.Splash" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <!-- 设置与启动页一致的背景，防止闪烁 -->
+        <item name="android:windowBackground">@android:color/white</item>
     </style>
 
     <style name="ShapeAppearanceOverlay.App.Circular" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
     </style>
+
 </resources>

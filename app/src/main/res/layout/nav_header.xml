@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_header_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/primary_gradient_start">
 
-
-
     <!-- 用户信息部分 -->
     <LinearLayout
+        android:id="@+id/nav_user_info_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -19,11 +19,15 @@
 
         <!-- 左侧头像部分 -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/nav_avatar_container"
             android:layout_width="60dp"
             android:layout_height="60dp"
             app:cardCornerRadius="30dp"
             app:cardElevation="0dp"
-            android:layout_marginEnd="30dp">
+            android:layout_marginEnd="30dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground">
 
             <ImageView
                 android:id="@+id/imageView_avatar"
@@ -37,11 +41,15 @@
 
         <!-- 右侧文字部分 -->
         <LinearLayout
+            android:id="@+id/nav_text_container"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="start">
+            android:gravity="start"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground">
 
             <TextView
                 android:id="@+id/textView_name"
@@ -49,9 +57,9 @@
                 android:layout_height="wrap_content"
                 android:text="小夏 XiaoXia"
                 android:textColor="@android:color/white"
-                android:textSize="18sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="4dp" />
+                android:paddingBottom="4dp" />
 
             <TextView
                 android:id="@+id/textView_motto"
@@ -70,7 +78,7 @@
             android:layout_height="40dp"
             android:src="@drawable/ic_more_vert"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:tint="@android:color/white"
+            app:tint="@android:color/white"
             android:contentDescription="更多选项" />
     </LinearLayout>
 
@@ -84,6 +92,7 @@
 
         <!-- 标题栏 -->
         <TextView
+            android:id="@+id/textView_history_label"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="对话历史"

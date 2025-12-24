@@ -198,10 +198,14 @@ class ChatViewModel(
                     }
                 }
 
-                // 启动流式响应收集
                 currentStreamJob = launch {
                     var responseCount = 0
-                    var totalTextLength = 0
+                    var latestFullContent = ""
+                    var latestFullReasoning = ""
+
+                    // 添加变量跟踪思考内容是否完成
+                    var hasReasoningContent = false
+                    var reasoningCompleteInResponse = false
 
                     Log.d(TAG, "开始收集流式响应")
 
@@ -211,18 +215,32 @@ class ChatViewModel(
                         webSearch = _chatState.value.webSearchEnabled
                     ).collect { response ->
                         responseCount++
-                        totalTextLength += response.content.length
 
-                       // Log.v(TAG, "收到响应[$responseCount]: 文本=${response.content.length}字符")
+                        val currentContent = response.content
+                        val currentReasoning = response.reasoningContent ?: ""
 
-                        // 将响应添加到平滑缓冲区
-                        smoothBuffer?.appendContent(
-                            text = response.content,
-                            reasoning = response.reasoningContent ?: ""
+                        // 检查是否有思考内容
+                        if (currentReasoning.isNotEmpty()) {
+                            hasReasoningContent = true
+                            latestFullReasoning = currentReasoning
+                        }
+
+                        // 保存最新完整内容
+                        if (currentContent.isNotEmpty()) {
+                            latestFullContent = currentContent
+                        }
+
+                        Log.v(TAG, "收到响应[$responseCount]: 文本=${currentContent.length}字符, 思考=${currentReasoning.length}字符, isFinal=${response.isFinal}")
+
+                        // 使用替换模式更新缓冲区
+                        smoothBuffer?.replaceContent(
+                            text = latestFullContent,
+                            reasoning = latestFullReasoning,
+                            isFinal = response.isFinal
                         )
                     }
 
-                    //Log.d(TAG, "流式响应收集完成: 总共${responseCount}个响应, 文本${totalTextLength}字符")
+                    Log.d(TAG, "流式响应收集完成: 总共${responseCount}个响应")
                     isStreamCompleted = true
 
                     // 流式响应完成，标记缓冲区完成
@@ -350,17 +368,37 @@ class ChatViewModel(
     fun fetchConversations(refresh: Boolean = false) {
         viewModelScope.launch {
             try {
+                if (refresh) {
+                    _conversationsState.update { it.copy(page = 0, hasMore = true, isLoading = true) }
+                } else {
+                    if (!_conversationsState.value.hasMore || _conversationsState.value.isLoading) {
+                        return@launch
+                    }
+                }
+
                 _conversationsState.update { it.copy(isLoading = true) }
-                val conversations = repository.getConversations()
-                _conversationsState.update {
-                    it.copy(
-                        conversations = conversations,
-                        isLoading = false
+                
+                val currentState = _conversationsState.value
+                val conversations = repository.getConversations(currentState.page, currentState.pageSize)
+                
+                _conversationsState.update { state ->
+                    val newList = if (refresh) {
+                        conversations
+                    } else {
+                        (state.conversations + conversations).distinctBy { it.id }
+                    }
+                    
+                    state.copy(
+                        conversations = newList,
+                        isLoading = false,
+                        page = state.page + 1,
+                        hasMore = conversations.size >= state.pageSize
                     )
                 }
+                Log.d(TAG, "成功获取对话列表: 页码=${_conversationsState.value.page-1}, 数量=${conversations.size}, hasMore=${_conversationsState.value.hasMore}")
             } catch (e: Exception) {
                 _conversationsState.update { it.copy(isLoading = false) }
-                Log.e("ChatViewModel", "获取对话列表失败", e)
+                Log.e(TAG, "获取对话列表失败", e)
             }
         }
     }
@@ -379,11 +417,15 @@ class ChatViewModel(
                 // 更新当前选中的对话
                 val selectedConversation = _conversationsState.value.conversations.find { it.id == conversationId }
 
-                // 重要：不覆盖全局 Session ID，只在当前聊天使用这个会话ID
-                // 但保持全局 Session ID 不变
+                // 优化：更新 Session ID 为加载的历史对话 ID，以便持续接着对话
+                sessionManager.saveSessionId(conversationId)
+                Log.d("ChatViewModel", "更新 Session ID 为加载的历史对话 ID: $conversationId")
+                repository.loadSessionToCache(conversationId)
+
                 _chatState.update {
                     it.copy(
                         messages = messages,
+                        sessionId = conversationId, // 同步更新状态
                         selectedConversation = selectedConversation,
                         showWelcome = messages.isEmpty(),
                         isLoading = false
@@ -446,9 +488,9 @@ class ChatViewModel(
             try {
                 repository.deleteConversation(conversationId)
 
-                // 从列表中移除
-                val updatedList = _conversationsState.value.conversations.filter { it.id != conversationId }
-                _conversationsState.update { it.copy(conversations = updatedList) }
+                // 从列表中移除并刷新
+                Log.d(TAG, "删除对话成功: $conversationId, 正在重新获取列表")
+                fetchConversations(true)
 
                 // 如果删除的是当前选中的对话，清空消息
                 if (_chatState.value.selectedConversation?.id == conversationId) {
@@ -462,7 +504,7 @@ class ChatViewModel(
                     sessionManager.clearSessionId()
                 }
             } catch (e: Exception) {
-                Log.e("ChatViewModel", "删除对话失败", e)
+                Log.e(TAG, "删除对话失败", e)
             }
         }
     }
@@ -483,7 +525,7 @@ class ChatViewModel(
             }
             Log.d(TAG, "状态已重置，初始化新会话")
             initSession()
-            fetchConversations(false)
+            fetchConversations(true)
         }
     }
 

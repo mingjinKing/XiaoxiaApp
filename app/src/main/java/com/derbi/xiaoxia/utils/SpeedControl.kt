@@ -3,7 +3,7 @@ package com.derbi.xiaoxia.utils
 
 class SpeedControl {
     companion object {
-        const val SPEED_SLOW = 300L    // 100ms per chunk
+        const val SPEED_SLOW = 100L    // 100ms per chunk
         const val SPEED_NORMAL = 50L   // 50ms per chunk
         const val SPEED_FAST = 20L     // 20ms per chunk
         const val SPEED_INSTANT = 0L   // 无延迟

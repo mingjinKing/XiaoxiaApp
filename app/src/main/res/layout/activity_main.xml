@@ -20,8 +20,8 @@
             android:id="@+id/app_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
-            app:elevation="4dp"
+            android:theme="@style/ThemeOverlay.AppCompat.Light"
+            app:elevation="0dp"
             android:background="@color/primary_gradient_start">
 
             <androidx.appcompat.widget.Toolbar
@@ -38,8 +38,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:textColor="@android:color/white"
-                    android:textSize="20sp"
+                    android:textColor="@android:color/black"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
 
             </androidx.appcompat.widget.Toolbar>
@@ -59,14 +59,14 @@
                 layout="@layout/layout_welcome"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:visibility="gone" />
+                android:visibility="visible" />
 
             <!-- WebView 用于显示对话 -->
             <WebView
                 android:id="@+id/webview_messages"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:visibility="gone" />
+                android:visibility="invisible" />
 
         </FrameLayout>
 

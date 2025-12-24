@@ -22,7 +22,7 @@ interface ApiService {
     suspend fun sendMessage(
         @Body request: TextChatRequest,
         @Header("X-Session-Id") sessionId: String
-    ): ResponseBody
+    ): Response<ResponseBody>
 
     // 获取会话列表 (参考 conversation.js 中的 fetchConversations)
     @GET("/xiaoXia/sessions")
