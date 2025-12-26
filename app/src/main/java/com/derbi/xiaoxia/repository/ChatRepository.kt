@@ -4,26 +4,31 @@ package com.derbi.xiaoxia.repository
 import android.util.Log
 import com.derbi.xiaoxia.models.*
 import com.derbi.xiaoxia.network.ApiService
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 class ChatRepository(
     private val apiService: ApiService,
     private val sessionManager: SessionManager
 ) {
 
+    companion object {
+        private const val TAG = "ChatRepository"
+    }
+
     // 初始化会话
     suspend fun initSession(): String {
         return withContext(Dispatchers.IO) {
             try {
-                val request = InitSessionRequest(userId = "user_id_placeholder") // TODO: Replace with actual user ID
+                val request = InitSessionRequest(userId = "user_id_placeholder")
                 val response = apiService.initSession(request)
                 val newSessionId = response.headers()["X-Session-Id"]
                 if (!newSessionId.isNullOrEmpty()) {
@@ -41,12 +46,7 @@ class ChatRepository(
         }
     }
 
-    // 在 ChatRepository 类中添加日志
-    companion object {
-        private const val TAG = "ChatRepository"
-    }
-
-    // 优化 sendMessage 方法，添加更好的流式处理
+    // 发送消息 - 支持流式响应
     fun sendMessage(
         message: String,
         deepThinking: Boolean = false,
@@ -56,7 +56,6 @@ class ChatRepository(
             Log.d(TAG, "开始发送消息: ${message.take(50)}...")
 
             var sessionId = sessionManager.getSessionId()
-            // 多轮对话应该使用同一个 Session ID
             if (sessionId.isBlank()) {
                 sessionId = initSession()
                 Log.d(TAG, "初始化新 Session: $sessionId")
@@ -70,26 +69,19 @@ class ChatRepository(
                 webSearch = webSearch
             )
 
-            // 修改这里：处理 Response<ResponseBody>
-            Log.d("ChatRepository", "开始发送消息, sessionId: $sessionId")
-            val response = apiService.sendMessage(request, sessionId)
-            
-            if (!response.isSuccessful) {
-                val errorMsg = response.errorBody()?.string() ?: "Unknown error"
-                Log.e(TAG, "Server error: ${response.code()} $errorMsg")
-                throw Exception("服务器错误 (${response.code()})")
-            }
-
-            val responseBody = response.body() ?: throw Exception("响应正文为空")
+            val responseBody = apiService.sendMessage(request, sessionId)
 
             Log.d(TAG, "收到流式响应")
 
-            // 使用缓冲读取器处理流式响应
-            responseBody.byteStream().bufferedReader(Charsets.UTF_8).use { reader ->
-                val buffer = CharArray(8192) // 增大缓冲区
+            // 使用缓冲读取器处理流式响应 - 修复类型推断问题
+            val inputStream = responseBody.body()?.byteStream();
+            val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
+
+            try {
                 var remainingLine = ""
                 var lineCount = 0
                 var totalBytes = 0
+                val buffer = CharArray(8192)
 
                 while (true) {
                     val charsRead = reader.read(buffer)
@@ -109,7 +101,9 @@ class ChatRepository(
                         val line = lines[i]
                         lineCount++
                         processLine(line)?.let {
-                            Log.d(TAG, "处理第${lineCount}行，内容长度=${it.content.length}, 思考长度=${it.reasoningContent?.length ?: 0}")
+                            Log.d(TAG, "处理第${lineCount}行，内容长度=${it.content?.length ?: 0}, " +
+                                    "思考长度=${it.reasoningContent?.length ?: 0}, " +
+                                    "替换模式=${it.isReplaceMode}")
                             emit(it)
                         }
                     }
@@ -124,10 +118,13 @@ class ChatRepository(
                 // 处理最后一行
                 if (remainingLine.isNotEmpty()) {
                     processLine(remainingLine)?.let {
-                        Log.d(TAG, "处理最后一行，内容长度=${it.content.length}")
+                        Log.d(TAG, "处理最后一行")
                         emit(it)
                     }
                 }
+            } finally {
+                reader.close()
+                inputStream?.close()
             }
 
             Log.d(TAG, "消息处理完成")
@@ -168,124 +165,95 @@ class ChatRepository(
 
             val json = JSONObject(data)
 
-            // 检查是否有 usage 字段，这是新格式的特征
-            val hasUsage = json.has("usage")
-            val hasRequestId = json.has("requestId")
-
-            if (hasUsage && hasRequestId) {
-                // 这是新的报文格式
-                return parseNewFormat(json)
-            } else {
-                // 这是旧的报文格式
-                return parseOldFormat(json)
-            }
-
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse SSE data: ${data.take(200)}...", e)
-            return MessageResponse(content = data.takeIf { it.length < 1000 } ?: "")
-        }
-    }
-
-    // ChatRepository.kt - 修改 parseNewFormat 方法
-    private fun parseNewFormat(json: JSONObject): MessageResponse? {
-        try {
-            val output = json.optJSONObject("output")
-            if (output == null) {
-                Log.v(TAG, "output字段为空")
-                return MessageResponse(content = "")
-            }
-
-            val choices = output.optJSONArray("choices")
-            if (choices == null || choices.length() == 0) {
-                Log.v(TAG, "choices字段为空或空数组")
-                return MessageResponse(content = "")
-            }
-
-            val firstChoice = choices.getJSONObject(0)
-            val message = firstChoice.optJSONObject("message")
-            if (message == null) {
-                Log.v(TAG, "message字段为空")
-                return MessageResponse(content = "")
-            }
-
-            // 从新位置获取内容
-            val content = message.optString("content", "").trim()
-            val reasoningContent = message.optString("reasoningContent", "").trim()
-
-            Log.v(TAG, "解析新格式: 内容长度=${content.length}, 思考长度=${reasoningContent.length}")
-
-            // 新增：检查是否是最终消息
-            val finishReason = firstChoice.optString("finishReason", null)
-            val isFinal = finishReason == "stop" || finishReason == "length" || finishReason == "tool_calls"
-
-            // 返回响应
-            return MessageResponse(
-                content = content,
-                reasoningContent = if (reasoningContent.isNotBlank()) reasoningContent else null,
-                // 新增：标记是否是最终消息
-                isFinal = isFinal,
-                // 可选：传递 finishReason 用于调试
-                finishReason = finishReason
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "解析新格式失败", e)
-            return MessageResponse(content = "")
-        }
-    }
-
-    private fun parseOldFormat(json: JSONObject): MessageResponse? {
-        try {
-            // 优先处理 output 字段
+            // 获取output字段
             val output = json.optJSONObject("output")
             if (output != null) {
-                var content = ""
-                var reasoningContent = ""
+                var content: String? = null
+                var reasoningContent: String? = null
+                var isReplaceMode: Boolean? = null
 
-                // 处理 choices 数组
-                val choices = output.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val firstChoice = choices.getJSONObject(0)
-                    val message = firstChoice.optJSONObject("message")
+                // 格式1：从output.text获取内容（追加模式）
+                if (output.has("text")) {
+                    val text = output.optString("text", "").trim()
+                    if (text.isNotEmpty()) {
+                        content = text
+                        isReplaceMode = false // 追加模式
+                        Log.v(TAG, "格式1(追加模式): ${text.take(50)}...")
+                    }
+                }
 
-                    if (message != null) {
-                        // 获取 content 字段
-                        val textContent = message.optString("content", "").trim()
-                        if (textContent.isNotEmpty()) {
-                            content = textContent
-                            Log.v(TAG, "解析到内容: ${textContent.take(50)}...")
-                        }
+                // 格式2：从output.choices[0].message获取内容（替换模式）
+                if (output.has("choices")) {
+                    val choices = output.optJSONArray("choices")
+                    if (choices != null && choices.length() > 0) {
+                        val firstChoice = choices.getJSONObject(0)
+                        val message = firstChoice.optJSONObject("message")
 
-                        // 获取 reasoningContent 字段
-                        val reasoning = message.optString("reasoningContent", "").trim()
-                        if (reasoning.isNotEmpty()) {
-                            reasoningContent = reasoning
-                            Log.v(TAG, "解析到思考过程: ${reasoning.take(50)}...")
+                        if (message != null) {
+                            // 获取content字段
+                            val textContent = message.optString("content", "").trim()
+                            if (textContent.isNotEmpty()) {
+                                content = textContent
+                                isReplaceMode = true // 替换模式
+                                Log.v(TAG, "格式2(替换模式)内容: ${textContent.take(50)}...")
+                            }
+
+                            // 获取reasoningContent字段
+                            val reasoning = message.optString("reasoningContent", "").trim()
+                            if (reasoning.isNotEmpty()) {
+                                reasoningContent = reasoning
+                                Log.v(TAG, "格式2思考过程: ${reasoning.take(50)}...")
+                            }
                         }
                     }
                 }
 
-                // 返回响应（即使是空内容也要返回，以便处理流式中的中间状态）
+                // 旧格式：从output.thoughts获取思考内容
+                if (output.has("thoughts")) {
+                    val thoughts = output.optJSONArray("thoughts")
+                    if (thoughts != null && thoughts.length() > 0) {
+                        var combinedReasoning = ""
+                        for (i in 0 until thoughts.length()) {
+                            val thought = thoughts.getJSONObject(i)
+                            val actionType = thought.optString("actionType", "")
+                            val response = thought.optString("response", "").trim()
+
+                            if (actionType == "reasoning" && response.isNotEmpty()) {
+                                combinedReasoning += response
+                            }
+                        }
+
+                        if (combinedReasoning.isNotEmpty()) {
+                            reasoningContent = combinedReasoning
+                            Log.v(TAG, "旧格式思考过程: ${combinedReasoning.take(50)}...")
+                        }
+                    }
+                }
+
+                // 过滤掉只有usage信息的空数据包
+                val hasRealContent = content?.isNotBlank() == true
+                val hasRealReasoning = reasoningContent?.isNotBlank() == true
+
+                if (!hasRealContent && !hasRealReasoning) {
+                    Log.v(TAG, "空数据包，跳过")
+                    return null
+                }
+
                 return MessageResponse(
                     content = content,
-                    reasoningContent = if (reasoningContent.isNotBlank()) reasoningContent else null
+                    reasoningContent = reasoningContent,
+                    isReplaceMode = isReplaceMode,
+                    timestamp = System.currentTimeMillis()
                 )
             }
 
-            // 直接文本响应（兼容旧格式）
-            val text = json.optString("text", "").trim()
-            if (text.isNotEmpty()) {
-                Log.v(TAG, "直接文本响应: ${text.take(50)}...")
-                return MessageResponse(content = text)
-            }
-
-            // 如果都没有内容，返回空的响应以便流式处理继续
-            Log.v(TAG, "空响应数据")
-            return MessageResponse(content = "")
+            // 如果都没有内容，返回null
+            Log.v(TAG, "没有output字段的空响应")
+            return null
 
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse old format data", e)
-            return MessageResponse(content = "")
+            Log.w(TAG, "Failed to parse SSE data: ${data.take(200)}...", e)
+            return null
         }
     }
 
@@ -302,15 +270,13 @@ class ChatRepository(
         }
     }
 
-    // 获取会话列表 - 修改返回类型为 List<Conversation>
+    // 获取会话列表
     suspend fun getConversations(page: Int = 0, pageSize: Int = 20): List<Conversation> {
         return withContext(Dispatchers.IO) {
             try {
                 val sessionId = sessionManager.getSessionId()
                 Log.d("ChatRepository", "getConversations sessionId: $sessionId")
                 val response = apiService.getSessions(page, pageSize)
-
-                // 转换 SessionListResponse 为 List<Conversation>
                 convertToConversationList(response)
             } catch (e: Exception) {
                 Log.e("ChatRepository", "getConversations error", e)
@@ -319,10 +285,8 @@ class ChatRepository(
         }
     }
 
-    // 辅助方法：将 SessionListResponse 转换为 List<Conversation>
     private fun convertToConversationList(response: SessionListResponse): List<Conversation> {
         return response.sessions.map { session ->
-            // 使用 Conversation 构造函数，直接传入需要的字段
             Conversation(
                 id = session.id,
                 title = session.title,
@@ -331,7 +295,7 @@ class ChatRepository(
                 updatedAt = session.updatedAt,
                 messageCount = session.messageCount,
                 isExpired = session.isExpired,
-                isSelected = false // 默认未选中
+                isSelected = false
             )
         }
     }
@@ -342,14 +306,7 @@ class ChatRepository(
             try {
                 val currentSessionId = sessionManager.getSessionId() ?: ""
                 val response = apiService.getConversationTurns(sessionId, currentSessionId)
-                
-                // 加载完成后，将当前 SessionId 设置为加载历史对话的 SessionId
-                if (sessionId.isNotEmpty()) {
-                    sessionManager.saveSessionId(sessionId)
-                    Log.d(TAG, "加载历史对话详情成功，更新当前 SessionId: $sessionId")
-                }
-                
-                response.turns  // 从响应中提取 turns 字段
+                response.turns
             } catch (e: Exception) {
                 Log.e("ChatRepository", "getConversationDetail error", e)
                 emptyList()
@@ -376,13 +333,6 @@ class ChatRepository(
             try {
                 val currentSessionId = sessionManager.getSessionId() ?: ""
                 val response = apiService.loadSessionToCache(sessionId, currentSessionId)
-                
-                // 加载完成后，将当前 SessionId 设置为加载历史对话的 SessionId
-                if (response.isSuccessful && sessionId.isNotEmpty()) {
-                    sessionManager.saveSessionId(sessionId)
-                    Log.d(TAG, "加载历史对话到缓存成功，更新当前 SessionId: $sessionId")
-                }
-                
                 response.isSuccessful
             } catch (e: Exception) {
                 Log.e("ChatRepository", "loadSessionToCache error", e)
@@ -392,14 +342,12 @@ class ChatRepository(
     }
 }
 
-// 数据类
+// 数据类 - 添加isReplaceMode字段
 data class MessageResponse(
-    val content: String,
+    val content: String?,
     val reasoningContent: String? = null,
-    val timestamp: Long = System.currentTimeMillis(),
-    // 新增字段
-    val isFinal: Boolean = false,
-    val finishReason: String? = null
+    val isReplaceMode: Boolean? = null,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 data class InitSessionResponse(
