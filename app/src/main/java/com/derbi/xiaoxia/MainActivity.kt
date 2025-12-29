@@ -1,7 +1,9 @@
 package com.derbi.xiaoxia
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.text.Editable
@@ -24,6 +26,7 @@ import android.widget.PopupMenu
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
@@ -47,6 +50,8 @@ import com.derbi.xiaoxia.repository.impl.SessionManagerImpl
 import com.derbi.xiaoxia.ui.SettingsActivity
 import com.derbi.xiaoxia.ui.WebViewActivity
 import com.derbi.xiaoxia.utils.DateTypeAdapter
+import com.derbi.xiaoxia.utils.TtsManager
+import com.derbi.xiaoxia.utils.VoiceRecognitionManager
 import com.derbi.xiaoxia.viewmodel.ChatViewModel
 import com.derbi.xiaoxia.viewmodel.ChatViewModelFactory
 import com.google.android.material.navigation.NavigationView
@@ -68,6 +73,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private lateinit var webView: WebView
     private lateinit var inputEditText: EditText
     private lateinit var fabSend: ImageButton
+    private lateinit var btnVoiceInput: ImageButton
     private lateinit var btnDeepThinking: TextView
     private lateinit var btnWebSearch: TextView
     private lateinit var toolbarTitle: TextView
@@ -90,10 +96,27 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private lateinit var conversationAdapter: ConversationAdapter
     private var longPressConversationId: String? = null
     private var longPressTimer: Timer? = null
+    private var isPreparingVoice = false // 记录是否正在建立连接
+    private var committedText = ""
 
     // 主题切换相关
     private var currentColorIndex = 0
     private val themeColors = listOf(R.color.theme_white, R.color.theme_blue, R.color.theme_pink)
+
+    private var voiceManager: VoiceRecognitionManager? = null
+    private var isVoiceRecording = false
+
+    private var ttsManager: TtsManager? = null
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            toggleVoiceInput()
+        } else {
+            showToast("需要录音权限才能使用语音输入")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,11 +146,19 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         setupInputListener()
         setupBackPressedHandler()
         setupConversationList()
+        
+        // TODO: 从安全位置获取 API Key
+        val apiKey = "sk-baf8c736bd4345f29acb38e5dcab5450"
+        setupVoiceRecognition(apiKey)
+        setupTts(apiKey)
 
         loadProfileImage()
         startCollectingState()
 
         viewModel.initializeApp()
+
+        // 播放欢迎语
+        ttsManager?.startSpeaking("你好呀，我是小夏！很高兴再次见到你。")
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -211,6 +242,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         navigationView = findViewById(R.id.navigation_view)
         inputEditText = findViewById(R.id.input_message)
         fabSend = findViewById(R.id.fab_send)
+        btnVoiceInput = findViewById(R.id.btn_voice_input)
         btnDeepThinking = findViewById(R.id.btn_deep_thinking)
         btnWebSearch = findViewById(R.id.btn_web_search)
         toolbarTitle = findViewById(R.id.toolbar_title)
@@ -272,7 +304,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // 3. 根据背景色调整文字和图标颜色
         val isWhiteTheme = colorResId == R.color.theme_white
         val contentColor = if (isWhiteTheme) Color.BLACK else Color.WHITE
-        
+
         // 首页顶部同步
         toolbarTitle.setTextColor(contentColor)
         toolbar.navigationIcon?.setTint(contentColor)
@@ -286,7 +318,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         navMotto?.setTextColor(contentColor)
         navMotto?.alpha = if (isWhiteTheme) 0.6f else 0.8f
         navMoreBtn?.imageTintList = android.content.res.ColorStateList.valueOf(contentColor)
-        
+
         // “对话历史”标签颜色根据主题动态调整
         historyLabel?.setTextColor(if (isWhiteTheme) ContextCompat.getColor(this, R.color.text_secondary) else color)
 
@@ -440,8 +472,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             sendMessage()
         }
 
-        findViewById<View>(R.id.btn_voice_input).setOnClickListener {
-            showToast("语音输入功能开发中...")
+        btnVoiceInput.setOnClickListener {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                toggleVoiceInput()
+            } else {
+                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         }
 
         findViewById<View>(R.id.btn_attachment).setOnClickListener {
@@ -481,6 +517,116 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             false
         }
+    }
+
+    private fun setupVoiceRecognition(apiKey: String) {
+        voiceManager = VoiceRecognitionManager(apiKey, object : VoiceRecognitionManager.VoiceRecognitionCallback {
+            override fun onVolumeUpdate(volume: Float) {
+                runOnUiThread {
+                    // 根据音量缩放麦克风按钮
+                    // volume 范围是 0.0 ~ 1.0
+                    // 我们让按钮在 1.0倍 到 1.5倍 之间缩放
+                    val scale = 1.0f + (volume * 0.5f)
+                    btnVoiceInput.scaleX = scale
+                    btnVoiceInput.scaleY = scale
+
+                    // 可选：同时改变透明度
+                    btnVoiceInput.alpha = 0.5f + (volume * 0.5f)
+                }
+            }
+
+            override fun onTranscriptionUpdate(text: String) {
+                runOnUiThread {
+                    // 显示：已确认的 + 正在转写的临时结果
+                    inputEditText.setText(committedText + text)
+                    inputEditText.setSelection(inputEditText.text.length)
+                }
+            }
+
+            override fun onTranscriptionComplete(text: String) {
+                runOnUiThread {
+                    // 该句完成，将其存入已确认缓冲区
+                    committedText += text
+                    inputEditText.setText(committedText)
+                    inputEditText.setSelection(committedText.length)
+                }
+            }
+
+            override fun onError(message: String) {
+                runOnUiThread {
+                    showToast("语音识别错误: $message")
+                    voiceManager?.stopRecognition()
+                    stopVoiceUI()
+                }
+            }
+
+            override fun onStart() {
+                runOnUiThread {
+                    startVoiceUI()
+                }
+            }
+
+            override fun onStop() {
+                runOnUiThread {
+                    stopVoiceUI()
+                }
+            }
+        })
+    }
+
+    private fun setupTts(apiKey: String) {
+        ttsManager = TtsManager(apiKey)
+    }
+
+    private fun toggleVoiceInput() {
+        if (!isVoiceRecording && !isPreparingVoice) {
+            committedText = "" // 每次新开始录音时清空
+        }
+        if (isPreparingVoice) return // 防止连点导致多个连接
+
+        if (isVoiceRecording) {
+            // 如果正在录音，点击则停止
+            voiceManager?.stopRecognition()
+            stopVoiceUI()
+        } else {
+            // 如果未录音，点击则开始准备
+            isPreparingVoice = true
+            showVoicePreparingUI() // 显示“启动中”状态
+            voiceManager?.startRecognition()
+        }
+    }
+
+    // 1. 启动中的 UI 反馈
+    private fun showVoicePreparingUI() {
+        btnVoiceInput.setImageResource(R.drawable.ic_mic)
+        btnVoiceInput.imageTintList = android.content.res.ColorStateList.valueOf(Color.GRAY) // 灰色表示处理中
+        inputEditText.hint = "正在连接语音服务..."
+        // 可以添加一个简单的旋转动画
+        btnVoiceInput.animate().rotationBy(360f).setDuration(1000).start()
+    }
+
+    // 2. 真正开始录音后的 UI
+    private fun startVoiceUI() {
+        isPreparingVoice = false
+        isVoiceRecording = true
+        btnVoiceInput.setImageResource(R.drawable.ic_stop) // 切换为停止图标
+        btnVoiceInput.imageTintList = android.content.res.ColorStateList.valueOf(Color.RED)
+        inputEditText.hint = "正在倾听，请说话..."
+    }
+
+    // 3. 彻底停止后的 UI
+    private fun stopVoiceUI() {
+        btnVoiceInput.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
+        btnVoiceInput.alpha = 1.0f
+
+        isPreparingVoice = false
+        isVoiceRecording = false
+        btnVoiceInput.clearAnimation()
+        btnVoiceInput.setImageResource(R.drawable.ic_mic) // 恢复麦克风图标
+        btnVoiceInput.imageTintList = android.content.res.ColorStateList.valueOf(
+            ContextCompat.getColor(this, R.color.text_secondary)
+        )
+        inputEditText.hint = "给小夏发送消息..."
     }
 
     private fun sendMessage() {
@@ -550,7 +696,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private fun setupSettingButton() {
         val headerView = navigationView.getHeaderView(0)
-        
+
         val openSettings = {
             val intent = Intent(this, SettingsActivity::class.java)
             intent.putExtra("theme_color_res", themeColors[currentColorIndex])
@@ -579,6 +725,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private fun loadConversation(conversation: Conversation) {
         viewModel.loadConversation(conversation.id)
         drawerLayout.closeDrawer(GravityCompat.START)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ttsManager?.release()
     }
 
     inner class ConversationAdapter(
