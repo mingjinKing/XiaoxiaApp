@@ -225,9 +225,10 @@
         let html = '';
         if (msg.type === 'ai') {
             // 1. 深度思考区块
+            // 1. 深度思考区块 - 修改这里：默认展开，不添加 collapsed 类
             const showReasoning = msg.showReasoning && msg.reasoningContent;
             html += `
-                <div id="reasoning-container-${msg.id}" class="reasoning-container ${msg.isReceivingReasoning ? '' : 'collapsed'}" style="display: ${showReasoning ? 'block' : 'none'}">
+                <div id="reasoning-container-${msg.id}" class="reasoning-container" style="display: ${showReasoning ? 'block' : 'none'}">
                     <div class="reasoning-header" onclick="toggleReasoning('${msg.id}')">深度思考</div>
                     <div id="reasoning-body-${msg.id}" class="reasoning-body markdown-body">${renderMarkdown(msg.reasoningContent || '')}</div>
                 </div>

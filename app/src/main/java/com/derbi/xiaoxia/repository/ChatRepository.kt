@@ -56,6 +56,7 @@ class ChatRepository(
             Log.d(TAG, "开始发送消息: ${message.take(50)}...")
 
             var sessionId = sessionManager.getSessionId()
+            Log.d("ChatRepository", "sendMessage sessionId: $sessionId")
             if (sessionId.isBlank()) {
                 sessionId = initSession()
                 Log.d(TAG, "初始化新 Session: $sessionId")
@@ -164,10 +165,13 @@ class ChatRepository(
             if (data.isEmpty()) return null
 
             val json = JSONObject(data)
+            Log.v(TAG, "解析完整JSON: $json")
 
             // 获取output字段
             val output = json.optJSONObject("output")
             if (output != null) {
+                Log.v(TAG, "output字段内容: $output")
+
                 var content: String? = null
                 var reasoningContent: String? = null
                 var isReplaceMode: Boolean? = null
@@ -175,10 +179,13 @@ class ChatRepository(
                 // 格式1：从output.text获取内容（追加模式）
                 if (output.has("text")) {
                     val text = output.optString("text", "").trim()
-                    if (text.isNotEmpty()) {
+                    // 修复：检查是否是字符串"null"
+                    if (text.isNotEmpty() && text.lowercase() != "null") {
                         content = text
                         isReplaceMode = false // 追加模式
                         Log.v(TAG, "格式1(追加模式): ${text.take(50)}...")
+                    } else {
+                        Log.v(TAG, "格式1: 跳过空或'null'字符串")
                     }
                 }
 
@@ -192,17 +199,24 @@ class ChatRepository(
                         if (message != null) {
                             // 获取content字段
                             val textContent = message.optString("content", "").trim()
-                            if (textContent.isNotEmpty()) {
+                            // 修复：检查是否是字符串"null"
+                            if (textContent.isNotEmpty() && textContent.lowercase() != "null") {
                                 content = textContent
                                 isReplaceMode = true // 替换模式
                                 Log.v(TAG, "格式2(替换模式)内容: ${textContent.take(50)}...")
+                            } else {
+                                Log.v(TAG, "格式2: content是空或'null'字符串")
                             }
 
                             // 获取reasoningContent字段
                             val reasoning = message.optString("reasoningContent", "").trim()
-                            if (reasoning.isNotEmpty()) {
+                            // 修复：检查是否是字符串"null"
+                            if (reasoning.isNotEmpty() && reasoning.lowercase() != "null") {
                                 reasoningContent = reasoning
+                                isReplaceMode = true // 替换模式
                                 Log.v(TAG, "格式2思考过程: ${reasoning.take(50)}...")
+                            } else {
+                                Log.v(TAG, "格式2: reasoning是空或'null'字符串")
                             }
                         }
                     }
@@ -218,7 +232,7 @@ class ChatRepository(
                             val actionType = thought.optString("actionType", "")
                             val response = thought.optString("response", "").trim()
 
-                            if (actionType == "reasoning" && response.isNotEmpty()) {
+                            if (actionType == "reasoning" && response.isNotEmpty() && response.lowercase() != "null") {
                                 combinedReasoning += response
                             }
                         }
@@ -231,14 +245,15 @@ class ChatRepository(
                 }
 
                 // 过滤掉只有usage信息的空数据包
-                val hasRealContent = content?.isNotBlank() == true
-                val hasRealReasoning = reasoningContent?.isNotBlank() == true
+                val hasRealContent = content?.isNotBlank() == true && content.lowercase() != "null"
+                val hasRealReasoning = reasoningContent?.isNotBlank() == true && reasoningContent.lowercase() != "null"
 
                 if (!hasRealContent && !hasRealReasoning) {
-                    Log.v(TAG, "空数据包，跳过")
+                    Log.v(TAG, "空数据包，跳过 - content: '$content', reasoning: '$reasoningContent'")
                     return null
                 }
 
+                Log.v(TAG, "返回有效响应: content='${content?.take(50)}...', reasoning='${reasoningContent?.take(50)}...'")
                 return MessageResponse(
                     content = content,
                     reasoningContent = reasoningContent,

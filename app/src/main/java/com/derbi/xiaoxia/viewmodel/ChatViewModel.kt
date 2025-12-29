@@ -381,6 +381,9 @@ class ChatViewModel(
             try {
                 _chatState.update { it.copy(isLoading = true) }
                 val conversationTurns = repository.getConversationDetail(conversationId)
+                // 更新 sessionId
+                sessionManager.saveSessionId(conversationId)
+                Log.d("ChatViewModel", "loadConversation conversationId is : $conversationId")
                 val messages = convertConversationTurnsToMessages(conversationTurns)
                 val selectedConversation = _conversationsState.value.conversations.find { it.id == conversationId }
 
