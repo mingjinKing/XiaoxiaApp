@@ -1,11 +1,14 @@
 package com.derbi.xiaoxia
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -141,7 +144,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         initViews()
         setupSettingButton()
         setupWelcomeGrid()
-        setupWebView()
+        //setupWebView()
         setupClickListeners()
         setupInputListener()
         setupBackPressedHandler()
@@ -327,6 +330,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun setupWebView() {
+        webView.addJavascriptInterface(WebAppInterface(), "AndroidInterface")
+
         webView.apply {
             setBackgroundColor(0)
             settings.apply {
@@ -343,8 +348,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 setSupportMultipleWindows(true)
             }
         }
-
-        webView.addJavascriptInterface(WebAppInterface(), "AndroidInterface")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
@@ -368,11 +371,24 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         webView.loadUrl("file:///android_asset/chat.html")
     }
 
+    // 尝试将接口类提取出来或确保其可见性
+    // 在 MainActivity.kt 中
     inner class WebAppInterface {
         @JavascriptInterface
-        fun openLink(url: String) {
-            runOnUiThread {
-                openLinkInWebView(url, "链接")
+        fun playTts(text: String?) {
+            // text 是从 JS 传过来的消息内容
+            if (!text.isNullOrBlank()) {
+                // 延迟 500ms 再播放，确保 WebView 完全加载
+                Handler(Looper.getMainLooper()).postDelayed({
+                    ttsManager?.startSpeaking(text)
+                }, 500)
+            }
+        }
+
+        @JavascriptInterface
+        fun stopTts() {
+            this@MainActivity.runOnUiThread {
+                ttsManager?.stopSpeaking()
             }
         }
     }
@@ -576,6 +592,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private fun setupTts(apiKey: String) {
         ttsManager = TtsManager(apiKey)
+        ttsManager?.onCompletionListener = {
+            runOnUiThread {
+                webView.evaluateJavascript("onTtsFinished();", null)
+            }
+        }
     }
 
     private fun toggleVoiceInput() {

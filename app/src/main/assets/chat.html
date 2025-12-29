@@ -79,16 +79,49 @@
             text-decoration: underline;
         }
 
+        .message-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
         .message-timestamp {
             font-size: 11px;
             color: rgba(0,0,0,0.4);
-            margin-top: 8px;
-            text-align: left;
         }
 
         .user-message .message-timestamp {
             color: rgba(255,255,255,0.7);
             text-align: right;
+            width: 100%;
+        }
+
+        .tts-btn {
+            background: none;
+            border: none;
+            padding: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+            margin-left: 8px;
+        }
+
+        .tts-btn:active {
+            background-color: rgba(0,0,0,0.1);
+        }
+
+        .tts-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: #666;
+        }
+
+        .tts-btn.playing svg {
+            fill: #667eea;
         }
 
         .loading-message {
@@ -165,11 +198,12 @@
 
         /* 免责声明样式 - 确保显眼 */
         .disclaimer {
-            margin-top: 20px;
+            margin-top: 12px;
             font-size: 11px;
             color: #888;
             font-style: italic;
-            border-bottom: 0;
+            border-top: 1px solid rgba(0,0,0,0.05);
+            padding-top: 4px;
         }
 
         /* 代码高亮优化 */
@@ -204,6 +238,7 @@
     const container = document.getElementById('messageContainer');
     const scrollThreshold = 50; 
     let isUserAtBottom = true;
+    let currentPlayingId = null;
 
     // 配置 marked
     function initMarked() {
@@ -217,6 +252,57 @@
         }
     }
 
+    function getTtsIcon(isPlaying) {
+        if (isPlaying) {
+            return `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`; // Stop/Pause icon
+        }
+        return `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`; // Speaker icon
+    }
+
+    window.toggleTts = function(msgId) {
+        const btn = document.querySelector(`#msg-${msgId} .tts-btn`);
+        const content = document.querySelector(`#msg-${msgId} .message-content`).innerText;
+
+        if (currentPlayingId === msgId) {
+            // Stop
+            if (window.AndroidInterface && window.AndroidInterface.stopTts) {
+                window.AndroidInterface.stopTts();
+            }
+            btn.classList.remove('playing');
+            btn.innerHTML = getTtsIcon(false);
+            currentPlayingId = null;
+        } else {
+            // If another one is playing, stop it first in UI
+            if (currentPlayingId) {
+                const oldBtn = document.querySelector(`#msg-${currentPlayingId} .tts-btn`);
+                if (oldBtn) {
+                    oldBtn.classList.remove('playing');
+                    oldBtn.innerHTML = getTtsIcon(false);
+                }
+            }
+
+            // Start
+            if (window.AndroidInterface && window.AndroidInterface.playTts) {
+                window.AndroidInterface.playTts(content);
+            }
+            btn.classList.add('playing');
+            btn.innerHTML = getTtsIcon(true);
+            currentPlayingId = msgId;
+        }
+    };
+
+    // 被 Android 调用以重置播放状态
+    window.onTtsFinished = function() {
+        if (currentPlayingId) {
+            const btn = document.querySelector(`#msg-${currentPlayingId} .tts-btn`);
+            if (btn) {
+                btn.classList.remove('playing');
+                btn.innerHTML = getTtsIcon(false);
+            }
+            currentPlayingId = null;
+        }
+    };
+
     function addMessage(msg) {
         const div = document.createElement('div');
         div.className = `message ${msg.type}-message`;
@@ -224,8 +310,6 @@
 
         let html = '';
         if (msg.type === 'ai') {
-            // 1. 深度思考区块
-            // 1. 深度思考区块 - 修改这里：默认展开，不添加 collapsed 类
             const showReasoning = msg.showReasoning && msg.reasoningContent;
             html += `
                 <div id="reasoning-container-${msg.id}" class="reasoning-container" style="display: ${showReasoning ? 'block' : 'none'}">
@@ -233,16 +317,20 @@
                     <div id="reasoning-body-${msg.id}" class="reasoning-body markdown-body">${renderMarkdown(msg.reasoningContent || '')}</div>
                 </div>
             `;
-            // 2. 正文内容
             html += `<div class="message-content markdown-body">${renderMarkdown(msg.content || '')}</div>`;
 
-            // 3. 免责声明 - 修正: 即使 content 为空，只要是 AI 消息且标志位为 true 就显示
             if (msg.showDisclaimer !== false) {
                 html += `<div class="disclaimer">建议仅供参考，请结合自身情况做出最终决策。</div>`;
             }
 
-            // 4. 时间戳
-            html += `<div class="message-timestamp">${formatTime(msg.timestamp)}</div>`;
+            html += `
+                <div class="message-footer">
+                    <div class="message-timestamp">${formatTime(msg.timestamp)}</div>
+                    <button class="tts-btn" onclick="toggleTts('${msg.id}')" title="播放语音">
+                        ${getTtsIcon(false)}
+                    </button>
+                </div>
+            `;
         } else {
             html += `<div class="message-content markdown-body">${renderMarkdown(msg.content || '')}</div>`;
             html += `<div class="message-timestamp">${formatTime(msg.timestamp)}</div>`;
@@ -279,7 +367,6 @@
         const existingMessage = document.getElementById(`msg-${messageId}`);
         if (!existingMessage) return;
 
-        // 1. 处理深度思考区块
         const reasoningContainer = document.getElementById(`reasoning-container-${messageId}`);
         const reasoningBody = document.getElementById(`reasoning-body-${messageId}`);
 
@@ -289,21 +376,18 @@
             reasoningBody.innerHTML = renderMarkdown(reasoningContent || '');
         }
 
-        // 2. 处理回复正文
         const contentElement = existingMessage.querySelector('.message-content');
         if (contentElement) {
             contentElement.innerHTML = renderMarkdown(content || '');
         }
 
-        // 3. 检查并确保免责声明存在
         if (showDisclaimer !== false && !existingMessage.querySelector('.disclaimer')) {
             const disclaimer = document.createElement('div');
             disclaimer.className = 'disclaimer';
             disclaimer.textContent = '建议仅供参考，请结合自身情况做出最终决策。';
-            // 插入在时间戳之前
-            const timestamp = existingMessage.querySelector('.message-timestamp');
-            if (timestamp) {
-                existingMessage.insertBefore(disclaimer, timestamp);
+            const footer = existingMessage.querySelector('.message-footer');
+            if (footer) {
+                existingMessage.insertBefore(disclaimer, footer);
             } else {
                 existingMessage.appendChild(disclaimer);
             }
@@ -352,14 +436,12 @@
         const date = new Date(timestamp);
         const now = new Date();
 
-        // 重置时间为0点，用于日期比较
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
 
         const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-        // 如果是今天
         if (targetDate.getTime() === today.getTime()) {
             return date.toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
@@ -367,7 +449,6 @@
             });
         }
 
-        // 如果是昨天
         if (targetDate.getTime() === yesterday.getTime()) {
             return '昨天 ' + date.toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
@@ -375,7 +456,6 @@
             });
         }
 
-        // 如果是今年
         if (date.getFullYear() === now.getFullYear()) {
             return date.toLocaleDateString('zh-CN', {
                 month: '2-digit',
@@ -386,7 +466,6 @@
             });
         }
 
-        // 其他情况显示完整日期和时间
         return date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {
             hour: '2-digit',
             minute: '2-digit'
@@ -420,21 +499,16 @@
 
             const currentIds = messages.filter(m => m.id).map(m => `msg-${m.id}`);
             Array.from(container.children).forEach(child => {
-                if (child.id && child.id.startsWith('msg-') && !currentIds.includes(child.id)) {
-                    container.removeChild(child);
+                if (child.id && !currentIds.includes(child.id) && !child.classList.contains('loading-message')) {
+                    child.remove();
                 }
             });
-
-            scrollToBottom(false);
         } catch (e) {
-            console.error("Sync messages error:", e);
+            console.error("Sync error:", e);
         }
     };
 
-    window.addEventListener('DOMContentLoaded', () => {
-        initMarked();
-        scrollToBottom();
-    });
+    initMarked();
 </script>
 </body>
 </html>
